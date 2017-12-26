@@ -1,0 +1,2614 @@
+<devicedata>
+    <copyright>Copyright 2004-2008 Control4 Corporation.  All rights reserved.</copyright>
+    <creator>SkyNet</creator>
+    <manufacturer>YKC</manufacturer>
+    <name>AirCondition YKC</name>
+    <model>AirCondition YKC</model>
+    <created>12/31/2015 11:47 AM</created>
+    <modified>01/24/2016 5:58 PM</modified>
+    <version>1</version>
+    <small>devices_sm\c4.gif</small>
+    <large>devices_lg\c4.gif</large>
+    <control>lua_gen</control>
+    <controlmethod>serial</controlmethod>
+    <driver>DriverWorks</driver>
+    <search_type>SkyNet</search_type>
+    <proxies qty="1">
+        <proxy proxybindingid="5001" name="YKC Thermostat">thermostat</proxy>
+    </proxies>
+    <capabilities>
+        <fan_off>False</fan_off>
+        <fan_speed_count>3</fan_speed_count>
+        <can_heat>True</can_heat>
+        <can_cool>True</can_cool>
+        <can_do_auto>False</can_do_auto>
+        <split_setpoints>True</split_setpoints>
+        <min_setpoint_spread>2</min_setpoint_spread>
+        <temp_heat_min>41</temp_heat_min>
+        <temp_heat_max>95</temp_heat_max>
+        <temp_cool_min>41</temp_cool_min>
+        <temp_cool_max>95</temp_cool_max>
+        <scheduling>False</scheduling>
+        <hold_permanently>False</hold_permanently>
+        <hold_2_hours>False</hold_2_hours>
+        <hold_to_next>False</hold_to_next>
+        <vacation>True</vacation>
+    </capabilities>
+    <connections>
+        <connection>
+            <id>1</id>
+            <facing>6</facing>
+            <connectionname>Serial RS-232</connectionname>
+            <type>1</type>
+            <consumer>True</consumer>
+            <audiosource>False</audiosource>
+            <videosource>False</videosource>
+            <linelevel>False</linelevel>
+            <classes>
+                <class>
+                    <classname>RS_232</classname>
+                </class>
+            </classes>
+        </connection>
+        <connection>
+            <id>2</id>
+            <facing>1</facing>
+            <connectionname>DATA_PROXY</connectionname>
+            <type>1</type>
+            <consumer>True</consumer>
+            <audiosource>False</audiosource>
+            <videosource>False</videosource>
+            <linelevel>True</linelevel>
+            <classes>
+                <class>
+                    <classname>DATA_PROXY</classname>
+                    <autobind>True</autobind>
+                </class>
+            </classes>
+        </connection>
+        <connection>
+            <id>5001</id>
+            <facing>6</facing>
+            <connectionname>Thermostat</connectionname>
+            <type>2</type>
+            <consumer>False</consumer>
+            <audiosource>False</audiosource>
+            <videosource>False</videosource>
+            <linelevel>False</linelevel>
+            <hidden>True</hidden>
+            <classes>
+                <class>
+                    <classname>THERMOSTAT</classname>
+                </class>
+            </classes>
+        </connection>
+    </connections>
+    <config>
+        <identify_text>AirCondition YKC</identify_text>
+        <power_management_method>AlwaysOn</power_management_method>
+        <power_command_delay>0</power_command_delay>
+        <power_delay>0</power_delay>
+        <power_command_needed>False</power_command_needed>
+        <serialsettings>9600 8 none 1 none </serialsettings>
+        <documentation>
+        </documentation>
+        <script><![CDATA[--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+-- Driver Declarations
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+--[[
+
+  Command Handler Tables
+
+--]]
+EX_CMD = {}
+PRX_CMD = {}
+NOTIFY = {}
+DEV_MSG = {}
+LUA_ACTION = {}
+
+--[[
+
+Tables of functions
+The following tables are function containers that are called within the following functions:  
+  OnDriverInit()
+    - first calls all functions contained within ON_DRIVER_EARLY_INIT table
+    - then calls all functions contained within ON_DRIVER_INIT table
+
+  OnDriverLateInit()
+    - calls all functions contained within ON_DRIVER_LATEINIT table
+
+  OnDriverUpdate()Running State
+    - calls all functions contained within ON_DRIVER_UPDATE table
+
+  OnDriverDestroyed()
+    - calls all functions contained within ON_DRIVER_DESTROYED table
+
+  OnPropertyChanged()
+    - calls all functions contained within ON_PROPERTY_CHANGED table
+
+--]]
+ON_DRIVER_INIT = {}
+ON_DRIVER_EARLY_INIT = {}
+ON_DRIVER_LATEINIT = {}
+ON_DRIVER_UPDATE = {}
+ON_DRIVER_DESTROYED = {}
+ON_PROPERTY_CHANGED = {}
+
+-- Constants
+DEFAULT_PROXY_BINDINGID = 5001
+
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+-- Common Driver Code
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+--[[
+  OnPropertyChanged
+    Function called by Director when a property changes value.
+  Parameters
+    sProperty
+      Name of property that has changed.
+
+  Remarks
+    The value of the property that has changed can be found with: Properties[sName]. Note
+    that OnPropertyChanged is not called when the Property has been changed by the driver
+    calling the UpdateProperty command, only when the Property is changed by the user from
+    the Properties Page. This function is called by Director when a property changes value.
+--]]
+function OnPropertyChanged(sProperty)
+  Dbg:Trace("OnPropertyChanged(" .. sProperty .. ") changed to: " .. Properties[sProperty])
+
+  local propertyValue = Properties[sProperty]
+
+  -- Remove any spaces (trim the property)
+  local trimmedProperty = string.gsub(sProperty, " ", "")
+
+  -- if function exists then execute (non-stripped)
+  if (ON_PROPERTY_CHANGED[sProperty] ~= nil and type(ON_PROPERTY_CHANGED[sProperty]) == "function") then
+    ON_PROPERTY_CHANGED[sProperty](propertyValue)
+    return
+    -- elseif trimmed function exists then execute
+  elseif (ON_PROPERTY_CHANGED[trimmedProperty] ~= nil and type(ON_PROPERTY_CHANGED[trimmedProperty]) == "function") then
+    ON_PROPERTY_CHANGED[trimmedProperty](propertyValue)
+    return
+  end
+
+  PropertyHandlingSpecialist:onPropertyChanged(sProperty, propertyValue)
+end
+
+function ON_PROPERTY_CHANGED.DebugMode(propertyValue)
+  gDebugTimer:KillTimer()
+  Dbg:OutputPrint(propertyValue:find("Print") ~= nil)
+  Dbg:OutputC4Log(propertyValue:find("Log") ~= nil)
+  if (propertyValue == "Off") then return end
+  gDebugTimer:StartTimer()
+end
+
+function ON_PROPERTY_CHANGED.DebugLevel(propertyValue)
+  Dbg:SetLogLevel(tonumber(string.sub(propertyValue, 1, 1)))
+end
+
+---------------------------------------------------------------------
+-- ExecuteCommand Code
+---------------------------------------------------------------------
+--[[
+
+  ExecuteCommand
+    Function called by Director when a command is received for this DriverWorks driver.
+    This includes commands created in Composer programming.
+  Parameters
+    sCommand
+      Command to be sent
+    tParams
+      Lua table of parameters for the sent command
+--]]
+function ExecuteCommand(sCommand, tParams)
+  Dbg:Trace("ExecuteCommand(" .. sCommand .. ")")
+  Dbg:Info(tParams)
+
+  -- Remove any spaces (trim the command)
+  local trimmedCommand = string.gsub(sCommand, " ", "")
+
+  -- if function exists then execute (non-stripped)
+  if (EX_CMD[sCommand] ~= nil and type(EX_CMD[sCommand]) == "function") then
+    EX_CMD[sCommand](tParams)
+    -- elseif trimmed function exists then execute
+  elseif (EX_CMD[trimmedCommand] ~= nil and type(EX_CMD[trimmedCommand]) == "function") then
+    EX_CMD[trimmedCommand](tParams)
+    -- handle the command
+  elseif (EX_CMD[sCommand] ~= nil) then
+    QueueCommand(EX_CMD[sCommand])
+  elseif (EX_CMD["DRIVER_EXTENDS_CMDS"] ~= nil) then
+    EX_CMD["DRIVER_EXTENDS_CMDS"](sCommand, tParams)
+  else
+    Dbg:Alert("ExecuteCommand: Unhandled command = " .. sCommand)
+  end
+end
+
+--[[
+
+  Define any functions of commands (EX_CMD.<command>) received from ExecuteCommand that need to be handled by the driver.
+
+--]]
+
+--[[
+
+  EX_CMD.LUA_ACTION
+
+    Function called for any actions executed by the user from the Actions Tab in Composer.
+
+--]]
+function EX_CMD.LUA_ACTION(tParams)
+  if tParams ~= nil then
+    for cmd,cmdv in pairs(tParams) do
+      if cmd == "ACTION" then
+        if (LUA_ACTION[cmdv] ~= nil) then
+          LUA_ACTION[cmdv]()
+        elseif ActionHandlingSpecialist:canHandle(cmdv) then
+          ActionHandlingSpecialist:doAction(cmdv)
+        else
+          Dbg:Alert("Undefined Action")
+          Dbg:Alert("Key: " .. cmd .. " Value: " .. cmdv)
+        end
+      else
+        Dbg:Alert("Undefined Command")
+        Dbg:Alert("Key: " .. cmd .. " Value: " .. cmdv)
+      end
+    end
+  end
+end
+
+--[[
+
+  LUA_ACTION.DisplayGlobals
+    Implementation of Action "Display Globals". Executed when selecting the "Display Globals" action within Composer.
+    Provided as an example for actions.
+--]]
+function LUA_ACTION.DisplayGlobals()
+  print ("Global Variables")
+  print ("----------------------------")
+
+  for k,v in pairs(_G) do -- globals`
+    if not (type(v) == "function") then
+      --print(k .. ":  " .. tostring(v))
+      if (string.find(k, "^g%L")  == 1) then
+        print(k .. ":  " .. tostring(v))
+        if (type(v) == "table") then
+          PrintTable(v, "   ")
+        end
+      end
+  end
+  end
+
+  print ("")
+end
+
+function PrintTable(tValue, sIndent)
+  sIndent = sIndent or "   "
+  for k,v in pairs(tValue) do
+    print(sIndent .. tostring(k) .. ":  " .. tostring(v))
+    if (type(v) == "table") then
+      PrintTable(v, sIndent .. "   ")
+    end
+  end
+end
+
+---------------------------------------------------------------------
+-- ReceivedFromProxy Code
+---------------------------------------------------------------------
+--[[
+
+  ReceivedFromProxy(idBinding, sCommand, tParams)
+    Function called by Director when a proxy bound to the specified binding sends a
+    BindMessage to the DriverWorks driver.
+  Parameters
+    idBinding
+      Binding ID of the proxy that sent a BindMessage to the DriverWorks driver.
+    sCommand
+      Command that was sent
+    tParams
+      Lua table of received command parameters
+
+--]]
+function ReceivedFromProxy(idBinding, sCommand, tParams)
+  if (sCommand ~= nil) then
+    if(tParams == nil)    -- initial table variable if nil
+    then tParams = {}
+    end
+    Dbg:Trace("ReceivedFromProxy(): " .. sCommand .. " on binding " .. idBinding .. "; Call Function " .. sCommand .. "()")
+    Dbg:Info(tParams)
+
+    if (PRX_CMD[sCommand]) ~= nil then
+      PRX_CMD[sCommand](idBinding, tParams)
+    elseif (PRX_CMD["DRVIER_EXTENDS_CMD"] ~= nil) then
+      PRX_CMD["DRVIER_EXTENDS_CMD"](idBinding, sCommand, tParams)
+    else
+      Dbg:Alert("ReceivedFromProxy: Unhandled command = " .. sCommand)
+    end
+  end
+end
+
+---------------------------------------------------------------------
+-- Notification Code
+---------------------------------------------------------------------
+-- notify with parameters
+function SendNotify(notifyText, Parms, bindingID)
+  C4:SendToProxy(bindingID, notifyText, Parms, "NOTIFY")
+end
+
+-- A notify with no parameters
+function SendSimpleNotify(notifyText, ...)
+  bindingID = select(1, ...) or DEFAULT_PROXY_BINDINGID
+  C4:SendToProxy(bindingID, notifyText, {}, "NOTIFY")
+end
+
+---------------------------------------------------------------------
+-- Initialization/Destructor Code
+---------------------------------------------------------------------
+--[[
+
+  OnDriverInit
+    Invoked by director when a driver is loaded. This API is provided for the driver developer to contain all of the driver
+    objects that will require initialization.
+
+--]]
+function OnDriverInit()
+  C4:ErrorLog("INIT_CODE: OnDriverInit()")
+  -- Call all ON_DRIVER_EARLY_INIT functions.
+  for k,v in pairs(ON_DRIVER_EARLY_INIT) do
+    if (ON_DRIVER_EARLY_INIT[k] ~= nil and type(ON_DRIVER_EARLY_INIT[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_EARLY_INIT." .. k .. "()")
+      ON_DRIVER_EARLY_INIT[k]()
+    end
+  end
+
+  -- Call all ON_DRIVER_INIT functions
+  for k,v in pairs(ON_DRIVER_INIT) do
+    if (ON_DRIVER_INIT[k] ~= nil and type(ON_DRIVER_INIT[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_INIT." .. k .. "()")
+      ON_DRIVER_INIT[k]()
+    end
+  end
+
+  -- Fire OnPropertyChanged to set the initial Headers and other Property global sets, they'll change if Property is changed.
+  for k,v in pairs(Properties) do
+    OnPropertyChanged(k)
+  end
+  
+  DriverInitialed = true
+  
+  if type(ON_DRIVER_INIT["AFTER_DRIVER_INITALED"]) == "function" then
+    ON_DRIVER_INIT["AFTER_DRIVER_INITALED"]()
+  end
+end
+
+--[[
+
+  OnDriverUpdate
+    Invoked by director when an update to a driver is requested. This request can occur either by adding a new version of a driver
+    through the driver search list or right clicking on the driver and selecting "Update Driver" from within ComposerPro.
+
+--]]
+function OnDriverUpdate()
+  C4:ErrorLog("INIT_CODE: OnDriverUpdate()")
+
+  -- Call all ON_DRIVER_UPDATE functions
+  for k,v in pairs(ON_DRIVER_UPDATE) do
+    if (ON_DRIVER_UPDATE[k] ~= nil and type(ON_DRIVER_UPDATE[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_UPDATE." .. k .. "()")
+      ON_DRIVER_UPDATE[k]()
+    end
+  end
+end
+
+--[[
+
+  OnDriverLateInit
+    Invoked by director after all drivers in the project have been loaded. This API is provided
+    for the driver developer to contain all of the driver objects that will require initialization
+    after all drivers in the project have been loaded.
+
+--]]
+function OnDriverLateInit()
+  C4:ErrorLog("INIT_CODE: OnDriverLateInit()")
+
+  -- Call all ON_DRIVER_LATEINIT functions
+  for k,v in pairs(ON_DRIVER_LATEINIT) do
+    if (ON_DRIVER_LATEINIT[k] ~= nil and type(ON_DRIVER_LATEINIT[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_LATEINIT." .. k .. "()")
+      ON_DRIVER_LATEINIT[k]()
+    end
+  end
+end
+
+
+--[[
+
+  OnDriverDestroyed
+
+    Function called by Director when a driver is removed. Release things this driver has allocated such as timers.
+
+--]]
+function OnDriverDestroyed()
+  C4:ErrorLog("INIT_CODE: OnDriverDestroyed()")
+  -- Call all ON_DRIVER_DESTROYED functions
+  for k,v in pairs(ON_DRIVER_DESTROYED) do
+    if (ON_DRIVER_DESTROYED[k] ~= nil and type(ON_DRIVER_DESTROYED[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_DESTROYED." .. k .. "()")
+      ON_DRIVER_DESTROYED[k]()
+    end
+  end
+end
+
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+-- Debug Logging Code
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+Log = {}
+
+-- Create a Table with Logging functions
+function Log:Create()
+
+  -- table for logging functions
+  local lt = {}
+
+  lt._logLevel = 0
+  lt._outputPrint = false
+  lt._outputC4Log = false
+  lt._logName =  "Set Log Name to display"
+
+  function lt:SetLogLevel(level)
+    self._logLevel = level
+  end
+
+  function lt:OutputPrint(value)
+    self._outputPrint = value
+  end
+
+  function lt:OutputC4Log(value)
+    self._outputC4Log = value
+  end
+
+  function lt:SetLogName(name)
+    self._logName = name
+  end
+
+  function lt:Enabled()
+    return (self._outputPrint or self._outputC4Log)
+  end
+
+  function lt:PrintTable(tValue, sIndent)
+    if (type(tValue) == "table") then
+      if (self._outputPrint) then
+        for k,v in pairs(tValue) do
+          print(sIndent .. tostring(k) .. ":  " .. tostring(v))
+          if (type(v) == "table") then
+            self:PrintTable(v, sIndent .. "   ")
+          end
+        end
+      end
+
+      if (self._outputC4Log) then
+        for k,v in pairs(tValue) do
+          C4:ErrorLog(self._logName .. ": " .. sIndent .. tostring(k) .. ":  " .. tostring(v))
+          if (type(v) == "table") then
+            self:PrintTable(v, sIndent .. "   ")
+          end
+        end
+      end
+
+    else
+      if (self._outputPrint) then
+        print (sIndent .. tValue)
+      end
+
+      if (self._outputC4Log) then
+        C4:ErrorLog(self._logName .. ": " .. sIndent .. tValue)
+      end
+    end
+  end
+
+  function lt:Print(logLevel, sLogText)
+    if (self._logLevel >= logLevel) then
+      if (type(sLogText) == "table") then
+        self:PrintTable(sLogText, "   ")
+        return
+      end
+
+      if (self._outputPrint) then
+        print (sLogText)
+      end
+
+      if (self._outputC4Log) then
+        C4:ErrorLog(self._logName .. ": " .. tostring(sLogText or "nil"))
+      end
+    end
+  end
+
+  function lt:Alert(strDebugText)
+    if (strDebugText == nil) then return end
+    self:Print(0, strDebugText)
+  end
+
+  function lt:Error(strDebugText)
+    if (strDebugText == nil) then return end
+    self:Print(1, strDebugText)
+  end
+
+  function lt:Warn(strDebugText)
+    if (strDebugText == nil) then return end
+    self:Print(2, strDebugText)
+  end
+
+  function lt:Info(strDebugText)
+  if (strDebugText == nil) then return end
+    self:Print(3, strDebugText)
+  end
+
+  function lt:Trace(strDebugText)
+  if (strDebugText == nil) then return end
+    self:Print(4, strDebugText)
+  end
+
+  function lt:Debug(strDebugText)
+    if (strDebugText == nil) then return end
+    self:Print(5, strDebugText)
+  end
+
+  return lt
+end
+
+function ON_DRIVER_EARLY_INIT.LogLib()
+  -- Create and initialize debug logging
+  Dbg = Log.Create()
+  Dbg:SetLogName("SmartSwitch")
+end
+
+function ON_DRIVER_INIT.LogLib()
+  -- Create Debug Timer
+  gDebugTimer = Timer:Create("Debug", 45, "MINUTES", OnDebugTimerExpired)
+end
+
+--[[
+
+  OnDebugTimerExpired
+    Debug timer callback function
+
+--]]
+function OnDebugTimerExpired()
+  Dbg:Warn("Turning Debug Mode Off (timer expired)")
+  gDebugTimer:KillTimer()
+  C4:UpdateProperty("Debug Mode", "Off")
+  OnPropertyChanged("Debug Mode")
+end
+
+---------------------------------------------------------------------
+-- Timer Code
+---------------------------------------------------------------------
+Timer = {}
+
+-- Create a Table with Timer functions
+function Timer:Create(name, interval, units, Callback, repeating, Info)
+  -- timers table
+  local tt = {}
+
+  tt._name = name
+  tt._timerID = TimerLibGetNextTimerID()
+  tt._interval = interval
+  tt._units = units
+  tt._repeating = repeating or false
+  tt._Callback = Callback
+  tt._info = Info or ""
+  tt._id = 0
+
+  function tt:StartTimer(...)
+    self:KillTimer()
+
+    -- optional parameters (interval, units, repeating)
+    if ... then
+      local interval = select(1, ...)
+      local units = select(2, ...)
+      local repeating = select(3, ...)
+
+      self._interval = interval or self._interval
+      self._units = units or self._units
+      self._repeating = repeating or self._repeating
+    end
+
+    if (self._interval > 0) then
+      Dbg:Trace("Starting Timer: " .. self._name)
+      self._id = C4:AddTimer(self._interval, self._units, self._repeating)
+    end
+  end
+
+  function tt:KillTimer()
+    if (self._id) then
+      self._id = C4:KillTimer(self._id)
+    end
+  end
+
+  function tt:TimerStarted()
+    return (self._id ~= 0)
+  end
+
+  function tt:TimerStopped()
+    return not self:TimerStarted()
+  end
+
+  gTimerLibTimers[tt._timerID] = tt
+  Dbg:Trace("Created timer " .. tt._name)
+
+  return tt
+end
+
+function TimerLibGetNextTimerID()
+  gTimerLibTimerCurID = gTimerLibTimerCurID + 1
+  return gTimerLibTimerCurID
+end
+
+function ON_DRIVER_EARLY_INIT.TimerLib()
+  gTimerLibTimers = {}
+  gTimerLibTimerCurID = 0
+end
+
+function ON_DRIVER_DESTROYED.TimerLib()
+  -- Kill open timers
+  for k,v in pairs(gTimerLibTimers) do
+    v:KillTimer()
+  end
+end
+
+--[[
+
+  OnTimerExpired
+    Function called by Director when the specified Control4 timer expires.
+  Parameters
+    idTimer
+      Timer ID of expired timer.
+
+--]]
+function OnTimerExpired(idTimer)
+  for k,v in pairs(gTimerLibTimers) do
+    if (idTimer == v._id) then
+      if (v._Callback) then
+        v._Callback(v._info)
+      end
+    end
+  end
+end
+
+
+------------------------------------------------------------------------
+-- Below are driver common scripts. It's almost same to all serial-bus-controlled driver.
+-- Will do below:
+-- 1. First of all, declare several important status variable
+-- 2. Add properties change handler
+-- 3. Add "show status" command handler
+-- 4. Add code for using or not using serial agent
+-- 5. Add error message display method
+
+local COMMON_CONSTANT = {
+  COMM_WITH_SERIAL_AGENT = "comm-by-serial-agent",
+  COMM_WITH_SERIAL_PORT = "comm-by-serial-port"
+}
+DriverInitialed = false
+--- Serial communication address for current device
+deviceAddress = 1
+--- communication mode. 1- use serial-agent driver, 2- directly use serial port
+local communicationMode = COMMON_CONSTANT.COMM_WITH_SERIAL_AGEN
+local serialAgentDevId = 1
+local oldSerialAgentDevId = 1
+--- print binary serial data package or not
+local isDumpSerialData = true
+--- buffer for framed receving-command strings
+local recvFrameDatas = {}
+--- framing timer
+local framingTimer
+local frameingTimerCnt = 0
+
+--- action commond
+function LUA_ACTION.ShowStatus()
+  print("Device address  is " .. deviceAddress)
+  print("Communication mode is " .. (communicationMode or "nil"))
+  print("Serial Agent device ID is " .. (serialAgentDevId or "nil"))
+  print("Dump serial data is " .. tostring(isDumpSerialData))
+  print("Polling task is " .. (pollingTimer:TimerStarted() 
+    and "Every " .. Properties["Polling Seconds"] .. " seconds"
+    or "not started"))
+  PropertyHandlingSpecialist:printAllProperties() 
+end
+
+--- Common property on-change handlers
+ON_PROPERTY_CHANGED["Use Serial Agent"] = function(propValue)
+  if (propValue == "Yes") then
+    communicationMode = COMMON_CONSTANT.COMM_WITH_SERIAL_AGENT
+  else
+    communicationMode = COMMON_CONSTANT.COMM_WITH_SERIAL_PORT
+  end
+  Dbg:Info("Set communication mode to "..(isDumpSerialData and "Yes" or "No"))
+  RebindSerialAgent()
+end
+
+ON_PROPERTY_CHANGED["Error Message"] = function(propValue)
+  Dbg:Debug("Error message is " .. (propValue or "nil"))
+end
+
+ON_PROPERTY_CHANGED["Address"] = function(propValue)
+  deviceAddress = tonumber(propValue)
+  Dbg:Info("Set device self serial communication address to "..deviceAddress)
+end
+
+ON_PROPERTY_CHANGED["Dump Serial Data"] = function(propValue)
+  isDumpSerialData = propValue == "Yes"
+  Dbg:Info("Set dump serial data to "..(isDumpSerialData and "Yes" or "No"))
+end
+
+ON_PROPERTY_CHANGED["Serial Agent Device ID"] = function(propValue)
+  serialAgentDevId = tonumber(propValue)
+  Dbg:Info("Serial agent used is "..serialAgentDevId)
+  RebindSerialAgent()
+end
+
+ON_PROPERTY_CHANGED["Polling Seconds"] = function(propValue)
+  if (pollingTimer) then
+    pollingTimer:KillTimer()
+  end
+
+  local timeIntv = tonumber(propValue)
+  if (timeIntv <= 0) then
+    Dbg:Info("Illumination polling schedule is closed")
+    return
+  end
+
+  pollingTimer = Timer:Create("polling timer", timeIntv, "SECONDS", pollingTask, true, "polling timer")
+  pollingTimer:StartTimer()
+end
+
+--- Common functions for comminication
+--- register with serial-agent variables
+function RebindSerialAgent()
+  C4:UnregisterVariableListener(oldSerialAgentDevId, 1002)
+  Dbg:Info("Release old binded serial agent "..oldSerialAgentDevId)
+  oldSerialAgentDevId = serialAgentDevId
+  if (serialAgentDevId > 0 and communicationMode == COMMON_CONSTANT.COMM_WITH_SERIAL_AGENT) then
+    C4:RegisterVariableListener(serialAgentDevId, 1002)
+    Dbg:Info("Bind me to serial agent "..serialAgentDevId)
+  end
+end
+--- hanlde serial-agent notification
+function OnWatchedVariableChanged(idDevice, idVariable, strValue)
+  if (idDevice == serialAgentDevId and idVariable==1002 and communicationMode == COMMON_CONSTANT.COMM_WITH_SERIAL_AGENT) then
+    OnRecieveFromSerialAgent(strValue)
+  end
+end
+
+--- forward data received from serial-agent
+function OnRecieveFromSerialAgent(strDataSeq)
+  if (not strDataSeq) then
+    return
+  end
+  local numDataSeq = tonumber(strDataSeq)
+  if (not numDataSeq or numDataSeq < 1002) then
+    return
+  end
+  local recvStr = C4:GetDeviceVariable(serialAgentDevId, numDataSeq)
+  local strData = C4:Base64Decode(recvStr)
+  if (isDumpSerialData) then
+    print("\n\n\nReceive below data from serial agent:")
+    hexdump(strData)
+  end
+  OnSerialDataReceived(strData)
+end
+--- handle data received from serial port
+function ReceivedFromSerial(idBinding, strData)
+  if strData == nil then
+    return
+  end
+  if (communicationMode ~= COMMON_CONSTANT.COMM_WITH_SERIAL_PORT) then
+    return
+  end
+
+  table.insert(recvStrDatas, strData)
+  if (#strData < pieceSize) then
+    frameingTimerCnt = 0
+    handleFrameData()
+  else
+    frameingTimerCnt = 3
+  end
+end
+
+function cutdownTimer()
+  if (frameingTimerCnt == 0) then
+    return
+  end
+  frameingTimerCnt = frameingTimerCnt - 1
+  if (frameingTimerCnt <= 0) then
+    handleFrameData()
+  end
+end
+
+-- when found a whole piece frame data, send out the signal
+function handleFrameData()
+  local str = "";
+  local len = #recvStrDatas
+  if (len < 1) then
+    return
+  end
+
+  for k=1,len do
+    str =  str .. recvStrDatas[k]
+  end
+  recvStrDatas = {}
+
+  if (isDumpSerialData) then
+    print("\n\n\nReceive below data from serial port")
+    hexdump(strData)
+  end
+  OnSerialDataReceived(strData)
+end
+
+
+function ON_DRIVER_INIT.driverCommonInit()
+  framingTimer = Timer:Create("framing timer", 10, "MILLISECONDS", OnTestTimer, true, "framing timer")
+  framingTimer:StartTimer()
+  RebindSerialAgent()
+  pollingTimer = Timer:Create("polling timer", 10, "SECONDS", readLumination, true, "polling timer")
+  pollingTimer:StartTimer()
+end
+----------------------------------------------------------------------------
+
+
+function SendCommand(strData)
+
+  if communicationMode == COMMON_CONSTANT.COMM_WITH_SERIAL_PORT then
+    C4:SendToSerial(1, strData)
+    if (isDumpSerialData) then
+      print("\n\n\nSend below data to serial port")
+      hexdump(strData)
+    end
+    return
+  end
+
+  local base64Str = C4:Base64Encode(strData)
+  C4:SendToDevice(serialAgentDevId, "SendCommand", {strData=base64Str})
+  if (isDumpSerialData) then
+    print("Send below data to serial agent")
+    hexdump(strData)
+  end
+end
+
+
+----------------------------------------------------------------------------
+DriverLib = {configData=nil}
+function DriverLib.getSortedKeys(tbl)
+  local keyTbl = {}
+  for k,v in pairs(tbl) do
+    table.insert(keyTbl,k)
+  end
+  table.sort(keyTbl)
+  return keyTbl
+end
+function DriverLib.tableToString(tbl, prefix)
+  local rstStr = "{"
+  prefix = prefix or ""
+  local keyTbl = DriverLib.getSortedKeys(tbl)
+  for i,k in pairs(keyTbl) do
+    local v = tbl[k]
+    if (type(v) == "table") then
+      rstStr = rstStr .. prefix .. k .. DriverLib.tableToString(v, prefix .. "    ")
+    else
+      if (rstStr ~= "{") then
+        rstStr = rstStr .. ", "
+      end
+      rstStr = rstStr .. prefix .. k .. "="
+      if (type(v) == "string") then
+        rstStr = rstStr .. "\"" .. tostring(v or "nil") .. "\""
+      else
+        rstStr = rstStr .. tostring(v or "nil")
+      end
+    end
+  end
+  return rstStr .. "}"
+end
+function DriverLib.sleep(timeSec)
+  socket.select(nil, nil, timeSec)
+end
+
+function DriverLib.setConfig(data)
+  DriverLib.configData = data
+end
+
+function DriverLib.postMsg(msg)
+  C4:UpdateProperty("Error Message", msg)
+  Dbg:Warn(msg)
+end
+function DriverLib.log(msg)
+  Dbg:Info(msg)
+end
+
+function DriverLib.setList(info, propertyValue)
+  if (info.propertyList == nil) then
+    DriverLib.postMsg("[Error]: " .. info.displayName .. " has not defined List property")
+    return
+  end
+  if (info.propertyList[propertyValue] == nil) then
+    DriverLib.postMsg("[Error]: " .. info.displayName .. " has no value defined for " .. propertyValue .. " in the List")
+    return
+  end
+  info.value = info.propertyList[propertyValue]
+  DriverLib.log("[Log  ]: " .. info.displayName .. " set to " .. tostring(info.value))
+end
+
+function DriverLib.setNumber(info, propertyValue)
+  info.value = tonumber(propertyValue)
+end
+
+function DriverLib.setString(info, propertyValue)
+  info.value = tostring(propertyValue)
+end
+
+function DriverLib.readOnly(info, propertyValue)
+  DriverLib.postMsg("[Error]: " .. info.displayName .. " is readonly")
+end
+
+function DriverLib.fireEvent(info, eventName)
+  DriverLib.log("[EVENT OCCURRED]: " .. eventName)
+  C4:FireEvent(eventName)
+end
+
+function DriverLib.updateProperty(info, value)
+  DriverLib.log("Set " .. info.propertyName .. " to " .. tostring(value or "nil"))
+  C4:UpdateProperty(info.propertyName, value)
+  if (info.propertyList == nil) then
+    info.value = value
+    return
+  end
+  DriverLib.setList(info, value)
+end
+
+function DriverLib.onPropertyChanged(propName, propValue)
+  for k,info in pairs(config.iodef) do
+    if info.propertyName == propName then
+      info.propertyHandler(info, propValue)
+    end
+  end
+end
+
+--function DriverLib.printProperties()
+--  for k,info in pairs(DriverLib.configData.iodef) do
+--    local value = info.value
+--    if (value == nil) then value = "nil" end
+--    print("The [" .. info.displayName .. "] is " .. tostring(value))
+--  end
+--end
+
+function DriverLib.get(name)
+  return DriverLib.configData.iodef[name].value
+end
+
+function DriverLib.byte0 (data)
+  return bit.band(data, 0xFF)
+end
+
+function DriverLib.byte1 (data)
+  return bit.band(bit.rshift(data, 8), 0xFF)
+end
+
+function DriverLib.crc16 (buf, length)
+  local crc = 0x0000ffff;
+  local len = length or #buf
+  for byte=1, len do
+    local curByte = string.byte(buf,byte,byte)
+    crc = bit.band(bit.bxor(crc, curByte), 0xFFFF)
+    for j=1,8,1 do
+      local f = bit.band(crc, 1)
+      crc = bit.band(bit.rshift(crc, 1), 0x7FFF)
+      if (f > 0) then
+        crc = bit.bxor(crc, 0xa001)
+      end
+    end
+  end
+  -- 485 CRC is low-byte first, high-byte then
+  return string.char(DriverLib.byte0(crc))..string.char(DriverLib.byte1(crc))
+end
+
+function DriverLib.verifyCrc16 (strData, numLen)
+  numLen = numLen or #strData
+  local calcCrc = DriverLib.crc16(strData, numLen-2)
+  local recvCrc = string.sub(strData, numLen-1,numLen)
+  return calcCrc == recvCrc
+end
+
+function DriverLib.toUShort (strData)
+  local rst = 0;
+  local byte0, byte1 = string.byte(strData,1,2)
+  return byte0 * 256 + byte1
+end
+function DriverLib.toShort (strData)
+  local rst = DriverLib.toUShort(strData)
+  if (rst > 0x7FFF) then
+    return rst - 0x10000
+  end
+  return rst
+end
+function DriverLib.lrc8(strData, len)
+  len = len or #strData
+  local lrc = 0
+  for i=1,len do
+    lrc = lrc + string.byte(strData,i,i)
+  end
+  return string.char(bit.band(lrc, 0xFF))
+end
+function DriverLib.lrc16(strData, len)
+  len = len or #strData
+  local lrc = 0
+  for i=1,len do
+    lrc = lrc + string.byte(strData,i,i)
+  end
+  return string.char(DriverLib.byte1(lrc), DriverLib.byte0(lrc))
+end
+
+PropertyHandlingSpecialist = {
+  changeTolerance = "ChangeTolerance",
+  regionUpper = "RegionUpperLimit",
+  regionLower = "RegionLowerLimit",
+  regionAntiShake = "RegionAntiShake",
+  fatal =   function (msg) print("!!!---FATAL-" .. msg) end,
+  error =   function (msg) print("!!----ERROR-" .. msg) end,
+  warning = function (msg) print("!---WARNING-" .. msg) end,
+  info =    function (msg) print("-------INFO-" .. msg) end,
+  debug =   function (msg) print("_-----DEBUG-" .. msg) end,
+
+  infor = {},
+  nameMap = {},
+  outputVariables = {},
+
+  printAllProperties = function(self)
+    for k,v in pairs(self.infor) do
+      if (v.bindToProperty) then
+        local value = v.value
+        if (value == nil) then value = "nil" end
+        print("Property " .. v.bindToProperty .. " is " .. tostring(value))
+      end
+    end
+  end,
+  
+  accept = function(self, nameMap, infoTable)
+    print(self, nameMap, infoTable)
+    self.infor = infoTable
+    self.nameMap = nameMap
+    self.outputVariables = {}
+    local varKeys = {}
+    -- add all UI-property:driver-property mapping from driver properties table
+    for name, info in pairs(infoTable) do
+      local uiName = info.bindToProperty
+      if (uiName ~= nil and nameMap[uiName] == nil) then
+        nameMap[uiName] = name
+      end
+      if (info.outputName ~= nil) then
+          self.outputVariables[info.outputName] = name
+          table.insert(varKeys, info.outputName)
+      end
+    end
+    -- verify and fill default value for all driver properties
+    for uiName, interName in pairs(nameMap) do
+      local info = infoTable[interName]
+      if (info == nil) then
+        self.fatal(string.format("Property info [%s]:[%s] not defined", uiName, interName))
+      else
+        info["propertyName"] = uiName
+        if (info.readOnly == nil) then info["readOnly"] = false end
+        if (info.dataType == nil) then self.fatal("You must provide data type for " .. interName) end
+        if (info.landmarkEvent ~= nill) and (type(info.landmarkCondition) ~= "function") then
+          self.fatal("You must provide landMarkCondition function for " .. interName)
+        end
+        
+      end
+    end
+    
+    -- add variables to C4
+    table.sort(varKeys)
+    for i,name in pairs(varKeys) do
+      local value = "NA"
+      local varType = "STRING"
+      local info = self.infor[self.outputVariables[name]]
+      if (info.dataType == "int") or (info.dataType == "float") then
+        varType = "NUMBER"
+        value = 0
+      end
+      self.outputVariables[name] = value
+      print("Add variable[" ..(1000+i).."] " .. name .. " with value [" .. value .."]")
+      C4:AddVariable(name, value, varType)
+    end
+  end,
+
+  updateProperty = function(self, name, value)
+    local info = self.infor[name]
+    
+    if type(info.onDeviceValueUpdated) == "function" then
+      info:onDeviceValueUpdated(name, value)
+      return
+    end
+    -- check if need fire change event
+    if (info.changeEvent ~= nil) then
+      self:handleChangeEvent(info, name, value)
+    end
+    -- check if need fire landmark event
+    if (info.landmarkEvent ~= nil) then
+      self:handleLandmarkEvent(info, name, value)
+    end
+    -- check if need fire region in-cross-out event
+    if (info.regionEvent ~= nil) then
+      self:handleRegionEvent(info, name, value)
+    end
+        
+    -- last step, change the UI display
+    info["value"] = value
+    local outputValue = value
+    if (info.dataType == "int") then
+      outputValue = tonumber(value)
+    elseif (info.dataType == "float") then
+      outputValue = tonumber(value)
+    elseif (info.dataType == "string") then
+      outputValue = tostring(value)
+    elseif (info.dataType == "list") then
+      for k,v in pairs(info.valueList) do
+        if (v == value) then
+          outputValue = tostring(k)
+          break
+        end
+      end
+    end
+    if (info.bindToProperty ~= nil) then
+      C4:UpdateProperty(info.bindToProperty, outputValue)
+    end
+    
+    if (info.outputName ~= nil) then
+      self:updateOutputVariable(info.outputName, outputValue)
+    end
+  end,
+  
+  updateOutputVariable = function(self, name, value)
+    local oldValue = self.outputVariables[name]
+    if oldValue == value then return end
+    self.outputVariables[name] = value
+    Dbg:Info("Update output variable " .. name .. " to " .. value)
+    C4:SetVariable(name, value)
+  end,
+  
+  handleChangeEvent = function(self, info, name, value)
+    if type(info.changeCondition) == "function" then
+        if (info.changeCondition(info, name, info.lastTimeChangedValue, value)) then
+          info.lastTimeChangedValue = value
+          DriverLib.fireEvent(info,info.changeEvent)
+        end
+        if (info.lastTimeChangedValue ==  nil) then
+          info.lastTimeChangedValue = value
+        end
+        return
+    end
+    
+    if (info.changeEventType == "variation range") then
+      if (info.lastTimeChangedValue == nil) then
+        info["lastTimeChangedValue"] = value
+        return
+      end
+      local oldValue = info.lastTimeChangedValue
+      local limitVal = self:getPropertyValue(name .. self.changeTolerance)
+      if (limitVal == nil) then
+        self.fatal("Please check if you have property " .. name .. self.changeTolerance .. " defined")
+        return
+      end
+      if (limitVal <= 0) then
+        -- if set the delta to 0, or -1, no change event will be triggered
+        info.lastTimeChangedValue = value
+        return
+      end
+      
+      if (math.abs(value - oldValue) >= limitVal) then
+        info.lastTimeChangedValue = value
+        DriverLib.fireEvent(info,info.changeEvent)
+      end
+    end
+    
+    if (info.changeEventType == "different") then
+      if (info.value == nil) then
+        info["value"] = value
+        return
+      end
+      if (info.value == value) then return end
+      info.value = value
+      DriverLib.fireEvent(info,info.changeEvent)
+    end
+  end,
+  
+  handleLandmarkEvent = function(self, info, name, value)
+    local hasMark = info:landmarkCondition(name, value, info.lastTimeLandMarkValue)
+    local oldMark = info["landmarkState"]
+    if oldMark == hasMark then return end
+    info.landmarkState = hasMark
+    info.lastTimeLandMarkValue = value
+    if hasMark == true then
+      DriverLib.fireEvent(info,info.landmarkEvent[1])
+    else
+      DriverLib.fireEvent(info,info.landmarkEvent[2])
+    end
+  end,
+  
+  handleRegionEvent = function(self, info, name, value)
+    local upLmt = self:getPropertyValue(name .. self.regionUpper) or 9999999
+    local loLmt = self:getPropertyValue(name .. self.regionLower) or -9999999
+    local antiShake = self:getPropertyValue(name .. self.regionAntiShake) or 0
+    
+    if (info.regionEventState == nil) then
+      if (value <= loLmt) then 
+        info.regionEventState = "TOO LOW"
+        DriverLib.fireEvent(info,info.regionEvent[1])
+      elseif (value >= upLmt) then
+        info.regionEventState = "TOO HIGH"
+        DriverLib.fireEvent(info,info.regionEvent[3])
+      else
+        info.regionEventState = "OK"
+        DriverLib.fireEvent(info,info.regionEvent[2])
+      end
+      return
+    end
+    
+    if (info.regionEventState == "TOO LOW") then
+    -- already too-low
+      if (value <= (loLmt+antiShake)) then 
+        return  -- still low, nothing to fire
+      elseif (value >= upLmt) then
+        info.regionEventState = "TOO HIGH"
+        DriverLib.fireEvent(info,info.regionEvent[3])
+      else
+        info.regionEventState = "OK"
+        DriverLib.fireEvent(info,info.regionEvent[2])
+      end
+    elseif (info.regionEventState == "OK") then
+    -- already OK
+      if (value <= loLmt) then 
+        info.regionEventState = "TOO LOW"
+        DriverLib.fireEvent(info,info.regionEvent[1])
+      elseif (value >= upLmt) then
+        info.regionEventState = "TOO HIGH"
+        DriverLib.fireEvent(info,info.regionEvent[3])
+      else
+        -- still in normal
+      end
+    elseif (info.regionEventState == "TOO HIGH") then
+    -- aleady too high
+      if (value <= loLmt) then 
+        info.regionEventState = "TOO LOW"
+        DriverLib.fireEvent(info,info.regionEvent[1])
+      elseif (value >= (upLmt-antiShake)) then
+        return
+      else
+        info.regionEventState = "OK"
+        DriverLib.fireEvent(info,info.regionEvent[2])
+      end
+      return
+    end
+  end,
+  
+  handlers = {
+    ["float"] = "defaultNumberPropertyHandler",
+    ["int"] = "defaultNumberPropertyHandler",
+    ["list"] = "defaultListPropertyHandler",
+    ["string"] = "defaultStringPropertyHandler",
+  },
+
+  defaultNumberPropertyHandler = function(info, name, value)
+    local numVal = tonumber(value)
+    if (type(info.range) == "table") then
+      if (numVal < info.range[1] or numVal > info.range[2]) then
+        return string.format("%s value should between {%d,%d} but %d", name, info.range[1], info.range[2], numVal)
+      end
+    end
+    info["value"] = tonumber(value)
+  end,
+  defaultListPropertyHandler = function(info, name, value)
+    if (info.valueList == nil) then return "Driver variable " .. name .. " has not defined LIST" end
+    if (info.valueList[value] == nil) then return "Driver variable " .. name .. " has not defined value" .. value end
+    info["value"] = info.valueList[value]
+  end,
+  defaultStringPropertyHandler = function(info, name, value)
+    info["value"] = tostring(value)
+  end,
+  getDefaultPropertyHandler = function(self, dataType)
+    return self[self.handlers[dataType]]
+  end,
+  getPropertyValue = function(self, propName, attrName)
+    local info = self.infor[propName]
+    if (not info) then return nil end
+    return info.value
+  end,
+  getPropertyAttribute = function(self, propName, attrName)
+    local info = self.infor[propName]
+    return info[attrName]
+  end,
+
+  onPropertyChanged = function(self, propName, strValue)
+    local strName = self.nameMap[propName]
+    if strName == nil then print("You don't provides handler for " .. propName) return end
+    local info = self.infor[strName]
+    if (not info) then self.fatal("You must handler property " .. strName) return end
+    local handler = info.onPropertyValueUpdated
+    if (not handler) then
+      if info.readOnly then print() end
+      handler = self:getDefaultPropertyHandler(info.dataType)
+      if handler == nil then self.fatal("Don't have default handler for type " .. info.dataType .. " for property" .. strName) return end
+    end
+    local rst = handler(info, strName, strValue)
+    if (rst ~= nil) then self.error(rst) return end
+    ----self.debug("^_^ : set property " .. strName .. " to " .. tostring(info.value))
+  end
+}
+
+print("I'm going to create ActionHandlingSpecialist")
+ActionHandlingSpecialist = {
+  actionTable = {},
+  
+  accept = function(self, actionTable)
+    self.actionTable = actionTable
+  end,
+  
+  canHandle = function(self, name)
+    return self.actionTable[name] ~= nil
+  end,
+  
+  doAction = function(self, name)
+    local info = self.actionTable[name]
+    local tParams = self:makeFunCallParam(name, info.params)
+    DriverLib.postMsg(info.callFunc(tParams))
+  end,
+  
+  makeFunCallParam = function(self, actionName, paramTbl)
+    if paramTbl == nil then return {} end
+    
+    local tParams = {}
+    for id, infoTbl in pairs(paramTbl) do
+      if (infoTbl.value) then
+        if (type(infoTbl.value) == "function") then
+          table.insert(tParams, infoTbl.value(actionName, paramTbl))
+        else
+          table.insert(tParams, infoTbl.value)
+        end
+      elseif (infoTbl.propertyAttr) then
+        local val = PropertyHandlingSpecialist:getPropertyAttribute(infoTbl.propertyName, infoTbl.propertyAttr)
+        table.insert(tParams, val)
+      elseif (infoTbl.propertyName) then
+        local val = PropertyHandlingSpecialist:getPropertyValue(infoTbl.propertyName)
+        table.insert(tParams, val)
+      end
+    end
+    return tParams
+  end,
+}
+
+function TemperatureF2C(fahrenheit)
+  return (tonumber(fahrenheit) - 32) / 1.8
+end
+
+function TemperatureC2F(celsius)
+  return tonumber(celsius) * 1.8 + 32
+end
+
+
+--require("AllSameScript")
+-----------------------------------------------------------------------
+-- Above codes are driver common scripts
+-- Below is mine
+----------------------------------------------------------------------------
+-- below are examples you need to write by yourself
+function OnSerialDataReceived(strData)
+  if (type(strData) ~= "string") then return end
+  if (#strData ~= 8) then return end
+  if (string.byte(strData,1,1) ~= 0x50) then return end
+  local srcDvcAddr = DriverLib.toUShort(string.sub(strData, 2, 3))
+  if (srcDvcAddr ~= deviceAddress) then return end
+  handleCommandResponse(1, strData)
+end
+
+function pollingTask()
+  cmdGetAll({})
+end
+
+local constants = {
+  ERROR_NO_ERROR = "SUCCESS",
+  ERROR_NO_RESPONSE = "NO RESPONSE",
+  ERROR_CRC_ERROR = "CRC ERROR",
+  ERROR_WRONG_FUNCTION_CODE = "WRONG FUNCTION CODE",
+  ERROR_WRONG_RESPONSE_CODE = "WRONG RESPONSE CODE",
+  ERROR_HALF_RESPONSE = "HALF_BACKED RESPONSE",
+}
+
+function toSignedByte(curByte)
+  if (curByte > 0x7F) then
+    return curByte - 0x100
+  else
+    return curByte
+  end
+end
+function calcYkcChecksum(strData, fromPos, toPos)
+  --TODO calculate checksum
+  local rst = 0;
+  for i=fromPos,toPos do
+    rst = rst + string.byte(strData,i,i)
+  end
+  rst = bit.band(rst, 0xFF)
+  rst = bit.bxor(rst, 0xA5)
+  return rst
+end
+function verifyYkcChecksum(strData)
+  local len = #strData
+  local checksum = calcYkcChecksum(strData,1,len-1)
+  return checksum == string.byte(strData,len,len)
+end
+
+function makeCmd(cmdCode, d0, d1, d2, d3)
+  local tgtDvcAddress = deviceAddress
+  if (cmdCode ~= 0xA0) and (PropertyHandlingSpecialist:getPropertyValue("BroadcastMode")) then
+    tgtDvcAddress = 0x0000
+  end
+  local strCmd = string.format("%02X %02X %02X %02X %02X %02X %02X",
+      cmdCode, DriverLib.byte1(tgtDvcAddress), DriverLib.byte0(tgtDvcAddress),
+      d0, d1, d2, d3)
+  local hexCmd = tohex(strCmd)
+  local checksum = calcYkcChecksum(hexCmd, 1, 7)
+  return hexCmd .. string.char(checksum)
+end
+
+function parseResponse(cmdCode, strReponse)
+  -- TODO: parseResponse
+  local result = {}
+--  if (cmdCode == 0xA1) or (cmdCode == 0xA0) then
+--    -- all data,continue
+--    result.cmdCode = cmdCode
+--  else
+    result.cmdCode = cmdCode
+    result.rstCode = "OK"
+--    return result
+--  end
+  
+  local curByte = string.byte(strReponse,4,4)
+  local curValue = bit.band(curByte, 0x3)
+  result.WindSpeed = curValue
+  
+  curValue = bit.band(0x01, bit.rshift(curByte, 2))
+  result.KeyPressLock = curValue
+  
+  curValue = bit.band(0x01, bit.rshift(curByte, 4))
+  result.RunningState = curValue
+  
+  curValue = bit.band(0x01, bit.rshift(curByte, 5))
+  result.WorkingMode = curValue
+  
+  curByte = string.byte(strReponse,5,5)
+  result.CompensationTmpr = toSignedByte(curByte)
+  
+  curByte = string.byte(strReponse,6,6)
+  result.SettingTemperature = toSignedByte(curByte)
+  
+  curByte = string.byte(strReponse,7,7)
+  result.RoomTemperature = toSignedByte(curByte)
+  
+  return result --TODO
+end
+
+function commonResponseHandler(idBinding, cmdCode, strData, tParams)
+  if verifyYkcChecksum(strData) ~= true then return {} end
+  local result = parseResponse(cmdCode, strData)
+  return result
+end
+
+local cmdMaker = {
+   commandCode = nil,
+   commandParams = nil,
+   cmdReadAll = {
+      -- TODO: handle query-all-from-device: 0xA0
+      cmdCode = 0xA0,
+      command = function(cmdCode, tParams)
+          return makeCmd(cmdCode, 0,0,0,0)
+        end,
+      responseHandler = commonResponseHandler,
+   },
+   cmdSetAllControl = {
+      -- TODO: handle set-all-to-device: 0xA1
+      cmdCode = 0xA1,
+      command = function(cmdCode, tParams)
+          local d0,d1,d2,d3 = 0,0,0,0
+          local curValue = tParams["WindSpeed"]
+          d0 = bit.bor(d0, bit.band(curValue, 3))
+          curValue = tParams["KeyPressLock"]
+          d0 = bit.bor(d0, bit.lshift(bit.band(curValue, 1),2))
+          curValue = tParams["RunningState"]
+          d0 = bit.bor(d0, bit.lshift(bit.band(curValue, 1),4))
+          curValue = tParams["WorkingMode"]
+          d0 = bit.bor(d0, bit.lshift(bit.band(curValue, 1),5))
+          
+          d1 = DriverLib.byte0(tParams["CompensationTmpr"])
+          d2 = DriverLib.byte0(tParams["SettingTemperature"])
+          return makeCmd(cmdCode, d0,d1,d2,d3)
+        end,
+      responseHandler = commonResponseHandler,
+   },
+   cmdStartStop = {
+      -- TODO: handle start-stop-device: 0xA2
+      cmdCode = 0xA2,
+      command = function(cmdCode, tParams)
+          local d0,d1,d2,d3 = 0,0,0,0
+          local curValue = tParams["RunningState"]
+          d0 = bit.bor(d0, bit.lshift(bit.band(curValue, 1),4))
+          return makeCmd(cmdCode, d0,d1,d2,d3)
+        end,
+      responseHandler = commonResponseHandler,
+   },
+   cmdWindSpeed = {
+      -- TODO: handle set-wind-speed: 0xA3
+      cmdCode = 0xA3,
+      command = function(cmdCode, tParams)
+          local d0,d1,d2,d3 = 0,0,0,0
+          local curValue = tParams["WindSpeed"]
+          d0 = bit.bor(d0, bit.band(curValue, 3))
+          return makeCmd(cmdCode, d0,d1,d2,d3)
+        end,
+      responseHandler = commonResponseHandler,
+   },
+   cmdWorkMode = {
+      -- TODO: handle set-work-mode: 0xA4
+      cmdCode = 0xA4,
+      command = function(cmdCode, tParams)
+          local d0,d1,d2,d3 = 0,0,0,0
+          local curValue = tParams["WorkingMode"]
+          d0 = bit.bor(d0, bit.lshift(bit.band(curValue, 1),5))
+          return makeCmd(cmdCode, d0,d1,d2,d3)
+        end,
+      responseHandler = commonResponseHandler,
+   },
+   cmdLockKeyPress = {
+      -- TODO: handle lock-key-press: 0xA5
+      cmdCode = 0xA5,
+      command = function(cmdCode, tParams)
+          local d0,d1,d2,d3 = 0,0,0,0
+          local curValue = tParams["KeyPressLock"]
+          d0 = bit.bor(d0, bit.lshift(bit.band(curValue, 1), 2))
+          return makeCmd(cmdCode, d0,d1,d2,d3)
+        end,
+      responseHandler = commonResponseHandler,
+   },
+   cmdSetTemperature = {
+      -- TODO: handle lock-key-press: 0xA6
+      cmdCode = 0xA6,
+      command = function(cmdCode, tParams)
+          local d0,d1,d2,d3 = 0,0,0,0
+          d2 = DriverLib.byte0(tParams["SettingTemperature"])
+          return makeCmd(cmdCode, d0,d1,d2,d3)
+        end,
+      responseHandler = commonResponseHandler,
+   },
+   cmdSetCompensationTmpr = {
+      -- TODO: handle lock-key-press: 0xA6
+      cmdCode = 0xA7,
+      command = function(cmdCode, tParams)
+          local d0,d1,d2,d3 = 0,0,0,0
+          d1 = DriverLib.byte0(tParams["CompensationTmpr"])
+          return makeCmd(cmdCode, d0,d1,d2,d3)
+        end,
+      responseHandler = commonResponseHandler,
+   },
+   
+}
+
+function sendOneCommand(code, tParams)
+  local cmdInfo = cmdMaker[code]
+  cmdMaker.commandCode = code
+  cmdMaker.commandParams = tParams
+  local cmdStr = cmdInfo.command(cmdInfo.cmdCode, tParams)
+  SendCommand(cmdStr)
+end
+
+function handleCommandResponse(idBinding, strData)
+  if (not cmdMaker.commandCode) then
+    return
+  end
+  local cmdInfo = cmdMaker[cmdMaker.commandCode]
+  local params = cmdMaker.commandParams
+  cmdMaker.commandCode = nil
+  cmdMaker.commandParams = nil
+  local result = cmdInfo.responseHandler(idBinding, cmdInfo.cmdCode, strData, params)
+  
+  for k,v in pairs(result) do
+    if (Mine_driverVars[k] ~= nil) then
+      PropertyHandlingSpecialist:updateProperty(k,v)
+    end
+  end
+  DriverLib.postMsg(result.errorMsg or "Received Data Processed")
+  updateProxyData(result)
+end
+--------------------
+-- functions do real driven here
+-------------------------
+function grabProperties(tPropNames)
+  local result = {}
+  for i=1,#tPropNames do
+    local name = tPropNames[i]
+    result[name] = PropertyHandlingSpecialist:getPropertyValue(name)
+  end
+  return result
+end
+-- TODO: functions provided for calling
+function cmdSetWindSpeed(tParams)
+  sendOneCommand("cmdWindSpeed", tParams)
+  return constants.ERROR_NO_ERROR
+end
+function cmdSetKeyLock(tParams)
+  sendOneCommand("cmdLockKeyPress", tParams)
+  return constants.ERROR_NO_ERROR
+end
+function cmdStartStop(tParams)
+  sendOneCommand("cmdStartStop", tParams)
+  return constants.ERROR_NO_ERROR
+end
+function cmdSetWorkMode(tParams)
+  sendOneCommand("cmdWorkMode", tParams)
+  return constants.ERROR_NO_ERROR
+end
+function cmdSetCompensationTmpr(tParams)
+  sendOneCommand("cmdSetCompensationTmpr", tParams)
+  return constants.ERROR_NO_ERROR
+end
+function cmdSetTemperature(tParams)
+  sendOneCommand("cmdSetTemperature", tParams)
+  return constants.ERROR_NO_ERROR
+end
+function cmdGetAll(tParams)
+  sendOneCommand("cmdReadAll", tParams)
+  return constants.ERROR_NO_ERROR
+end
+function cmdSetAllByProperties(tParams)
+  local cmdData = grabProperties({"WindSpeed","KeyPressLock","RunningState", "WorkingMode","CompensationTmpr","SettingTemperature"})
+  sendOneCommand("cmdSetAllControl", cmdData)
+  return constants.ERROR_NO_ERROR
+end
+-- configurations
+propertyNameMap = {
+}
+
+Mine_driverVars = {
+  WindSpeed = {
+    bindToProperty = "Wind Speed",
+    outputName = "WindSpeed",
+    readOnly = false,
+    dataType = "list",
+    valueList = {
+      ["Auto"] = 0,
+      ["High"] = 1,
+      ["Medium"] = 2,
+      ["Low"] = 3,
+    },
+    changeEvent = "Wind Speed Changed",
+    changeEventType = "different",
+    onPropertyValueUpdated = function(info, name, value)
+      PropertyHandlingSpecialist.defaultListPropertyHandler(info, name, value)
+      if (not DriverInitialed) then return end
+      local argValue = info.valueList[value]
+      if (argValue == nil) then return end
+      local controlCmd = {WindSpeed = argValue}
+      cmdSetWindSpeed(controlCmd)
+      updateProxyData(controlCmd)
+      DriverLib.postMsg("SUCCESS")
+    end
+  },
+  KeyPressLock = {
+    bindToProperty = "KeyPress Lock State",
+    outputName = "KeyPressLock",
+    readOnly = false,
+    dataType = "list",
+    valueList = {
+      ["Unlock"] = 0,
+      ["Locked"] = 1,
+    },
+    changeEvent = "KeyPress Lock State Changed",
+    changeEventType = "different",
+    onPropertyValueUpdated = function(info, name, value)
+      PropertyHandlingSpecialist.defaultListPropertyHandler(info, name, value)
+      if (not DriverInitialed) then return end
+      local argValue = info.valueList[value]
+      if (argValue == nil) then return end
+      local controlCmd = {KeyPressLock = argValue}
+      cmdSetKeyLock(controlCmd)
+      updateProxyData(controlCmd)
+      DriverLib.postMsg("SUCCESS")
+    end
+  },
+  RunningState = {
+    bindToProperty = "Running State",
+    outputName = "RunningState",
+    readOnly = false,
+    dataType = "list",
+    valueList = {
+      ["Stop"] = 0,
+      ["Running"] = 1,
+    },
+    changeEvent = "Running State Changed",
+    changeEventType = "different",
+    onPropertyValueUpdated = function(info, name, value)
+      PropertyHandlingSpecialist.defaultListPropertyHandler(info, name, value)
+      if (not DriverInitialed) then return end
+      local argValue = info.valueList[value]
+      if (argValue == nil) then return end
+      local controlCmd = {RunningState = argValue}
+      cmdStartStop(controlCmd)
+      controlCmd.WorkingMode = PropertyHandlingSpecialist:getPropertyValue("WorkingMode")
+      updateProxyData(controlCmd)
+      DriverLib.postMsg("SUCCESS")
+    end
+  },
+  WorkingMode = {
+    bindToProperty = "Working Mode",
+    outputName = "WorkingMode",
+    readOnly = true,
+    dataType = "list",
+    valueList = {
+      ["Heating"] = 1,
+      ["Cooling"] = 0,
+    },
+    changeEvent = "Work Mode Changed",
+    changeEventType = "different",
+    onPropertyValueUpdated = function(info, name, value)
+      PropertyHandlingSpecialist.defaultListPropertyHandler(info, name, value)
+      if (not DriverInitialed) then return end
+      local argValue = info.valueList[value]
+      if (argValue == nil) then return end
+      local controlCmd = {WorkingMode = argValue}
+      cmdSetWorkMode(controlCmd)
+      controlCmd.RunningState = PropertyHandlingSpecialist:getPropertyValue("RunningState")
+      updateProxyData(controlCmd)
+      DriverLib.postMsg("SUCCESS")
+    end
+  },
+  CompensationTmpr = {
+    bindToProperty = "Compensation Temperature",
+    outputName = "CompensationTmpr",
+    readOnly = true,
+    dataType = "int",
+    range = {-9,9},
+    changeEvent = "Compensation Temperature Changed",
+    changeEventType = "different",
+    onPropertyValueUpdated = function(info, name, value)
+      PropertyHandlingSpecialist.defaultNumberPropertyHandler(info, name, value)
+      if (not DriverInitialed) then return end
+      local newValue = PropertyHandlingSpecialist:getPropertyValue(name)
+      if (newValue == nil) then return end
+      local controlCmd = {CompensationTmpr = newValue}
+      cmdSetCompensationTmpr(controlCmd)
+      updateProxyData(controlCmd)
+      DriverLib.postMsg("SUCCESS")
+    end,
+  },
+  RoomTemperature = {
+    bindToProperty = "Room Temperature",
+    outputName = "RoomTemperature",
+    readOnly = true,
+    dataType = "int",
+    changeEvent = "Room Temperature Changed",
+    changeEventType = "different",
+  },
+  SettingTemperature= {
+    bindToProperty = "Set Temperature",
+    outputName = "SettingTemperature",
+    readOnly = false,
+    dataType = "int",
+    range = {5, 35},
+    onPropertyValueUpdated = function(info, name, value)
+      local errMsg = PropertyHandlingSpecialist.defaultNumberPropertyHandler(info, name, value)
+      if (errMsg) then
+        DriverLib.postMsg(errMsg)
+        return
+      end
+      if (not DriverInitialed) then return end
+      local newValue = PropertyHandlingSpecialist:getPropertyValue(name)
+      local controlCmd = {SettingTemperature = newValue}
+      cmdSetTemperature(controlCmd)
+      updateProxyData(controlCmd)
+      DriverLib.postMsg("SUCCESS")
+    end,
+  },
+  BroadcastMode = {
+    bindToProperty = "Control Type",
+    readOnly = false,
+    dataType = "list",
+    valueList = {
+      ["Only Control 1 Device"] = false,
+      ["Send To All Devices"] = true,
+    },
+  },
+}
+
+
+Mine_Actions = {
+  ["getAllData"] = {
+    callFunc = cmdGetAll,
+    params = {},
+  },
+  ["setAllData"] = {
+    callFunc = cmdSetAllByProperties,
+    params = {},
+  },
+}
+
+
+PropertyHandlingSpecialist:accept(propertyNameMap, Mine_driverVars)
+ActionHandlingSpecialist:accept(Mine_Actions)
+
+function ON_DRIVER_INIT.AFTER_DRIVER_INITALED()
+  --TODO just run after all properties was set first round
+end
+
+function EX_CMD.WhoAmI(tParams)
+  local resp = {
+    deviceId = C4:GetDeviceID(),
+    profile = "YKCAirCondition"
+  }
+  C4:SendToDevice(tParams.deviceId, "UpdateProfile", resp)
+end
+
+function covertExCmdParams(tParams)
+  if (tParams == nil) then return nil end
+  local result = {}
+  for name,value in pairs(tParams) do
+    local info = Mine_driverVars[name]
+    if (info == nil) then print("Unknow params " .. name) return nil end
+    local cmdValue = nil
+    if (info.dataType == "list") then
+      cmdValue = info.valueList[value]
+    else
+      cmdValue = tonumber(value)
+      if (info.range ~= nil) then
+        if (cmdValue < info.range[1]) or (cmdValue > info.range[2]) then
+          cmdValue = nil
+        end
+      end
+    end
+    if (cmdValue == nil) then
+      print("Invalid value [" .. (tostring(value) or "nil") .. "] for params " .. name)
+      return nil
+    end
+    result[name] = cmdValue
+  end
+  return result
+end
+---------------------------------------
+function EX_CMD.queryAll(tParams)
+  cmdGetAll({})
+end
+  
+function EX_CMD.startStop(tParams)
+  local cmdData = covertExCmdParams(tParams)
+  if (cmdData == nil) then return end
+  cmdStartStop(cmdData)
+  updateProxyData({RunningState=cmdData.cmdData, WorkingMode = PropertyHandlingSpecialist:getPropertyValue("WorkingMode")})
+end
+function EX_CMD.setWorkMode(tParams)
+  local cmdData = covertExCmdParams(tParams)
+  if (cmdData == nil) then return end
+  cmdSetWorkMode(cmdData)
+  updateProxyData({WorkingMode=cmdData.WorkingMode, RunningState=PropertyHandlingSpecialist:getPropertyValue("RunningState")})
+end
+function EX_CMD.setFanMode(tParams)
+  local cmdData = covertExCmdParams(tParams)
+  if (cmdData == nil) then return end
+  cmdSetWindSpeed(cmdData)
+  updateProxyData({WindSpeed=cmdData.WindSpeed})
+end
+function EX_CMD.setKeyLock(tParams)
+  local cmdData = covertExCmdParams(tParams)
+  if (cmdData == nil) then return end
+  cmdSetKeyLock(cmdData)
+end
+function EX_CMD.setTemperature(tParams)
+  local cmdData = covertExCmdParams(tParams)
+  if (cmdData == nil) then return end
+  cmdSetTemperature(cmdData)
+  updateProxyData({SettingTemperature=cmdData.SettingTemperature})
+end
+function EX_CMD.SetCompensationTmpr(tParams)
+  local cmdData = covertExCmdParams(tParams)
+  if (cmdData == nil) then return end
+  cmdSetCompensationTmpr(cmdData)
+end
+function EX_CMD.SetAllControl(tParams)
+  local cmdData = covertExCmdParams(tParams)
+  if (cmdData == nil) then return end
+  sendOneCommand("cmdSetAllControl", cmdData)
+  updateProxyData(cmdData)
+end
+---------------------
+-- below are proxy commands
+HvacProxyData = {
+  mode = "OFF",
+  fanState = "LOW",
+  scale = "C",
+  temperature = 25,
+  heatPoint = 27,
+  coolPoint = 27,
+}
+
+function toInt(num)
+  return math.ceil(num + 0.5) - 1
+end
+function SendToProxy(idBinding, strCommand, tParams, ...)
+     local paramStr = DriverLib.tableToString(tParams,"")
+  Dbg:Debug("SendToProxy (" .. idBinding .. ", " .. strCommand .. ")" .. (paramStr or "nil"))
+  if ... then
+    local callType = ...
+    C4:SendToProxy(idBinding, strCommand, tParams, callType)
+  else
+    C4:SendToProxy(idBinding, strCommand, tParams)
+  end
+end
+
+function ON_DRIVER_INIT.InitTstatProxy()
+-- these are all the notify commands that set values used by the Thermostat proxy
+    SendToProxy(PROXY_ID, "SCALE_CHANGED", {SCALE = HvacProxyData.scale})            --int: 0==F, 1==C
+    SendToProxy(PROXY_ID, "SET_SETPOINT", {SETPOINT = HvacProxyData.temperature})        --string
+    SendToProxy(PROXY_ID, "TEMPERATURE_CHANGED", {TEMPERATURE = HvacProxyData.temperature})    --string
+    SendToProxy(PROXY_ID, "SETPOINT_CHANGED", {SETPOINT = HvacProxyData.temperature})      --string
+    SendToProxy(PROXY_ID, "HEAT_SETPOINT_CHANGED", {SETPOINT = HvacProxyData.heatPoint})    --string
+    SendToProxy(PROXY_ID, "COOL_SETPOINT_CHANGED", {SETPOINT = HvacProxyData.coolPoint})    --string
+    SendToProxy(PROXY_ID, "HVACMODE_CHANGED", {HVACMODE = HvacProxyData.mode})   --string ( HEAT | OFF | COOL | AUTO )
+    SendToProxy(PROXY_ID, "FANMODE_CHANGED", {FANMODE = HvacProxyData.fanMode})      --string ( AUTO | ON )
+    SendToProxy(PROXY_ID, "HOLDMODE_CHANGED", {HOLDMODE = "OFF"})   --string ( OFF | TO_NEXT | 2_HOURS | PERMANENT )
+end
+
+function EX_CMD.DRIVER_EXTENDS_CMDS(strCommand, tParams)
+  Dbg:Debug("ExecuteCommand function called with : " .. strCommand .."(" .. DriverLib.tableToString(tParams,"") .. ")") 
+  if (tParams == nil) then
+    dbg ("From ExecuteCommand Function - Unutilized command: " .. strCommand)
+  end
+
+  if (strCommand == "HVACMODE_CHANGED") then
+    local HVACMode = tParams["HVACMODE"]
+    if (HVACMode ~= HvacProxyData.mode) then
+      HvacProxyData.mode = HVACMode
+      SendToProxy(PROXY_ID, strCommand, tParams)
+    end
+  elseif (strCommand == "FAN_STATE") then
+    local fanState = tParams["STATE"]
+    if (fanState ~= HvacProxyData.fanState) then
+      HvacProxyData.fanState = fanState
+      SendToProxy(PROXY_ID, strCommand, tParams)
+    end
+  elseif (strCommand == "SCALE_CHANGED") then
+    local scale = tParams["SCALE"]
+    if (scale ~= HvacProxyData.scale) then
+      HvacProxyData.scale = scale
+      SendToProxy(PROXY_ID, strCommand, tParams)
+    end
+  elseif (strCommand == "FANMODE_CHANGED") then
+    local fanMode = tParams["FANMODE"]
+    if (fanMode ~= HvacProxyData.fanMode) then
+      HvacProxyData.fanMode = fanMode
+      SendToProxy(PROXY_ID, strCommand, tParams)
+    end
+  elseif (strCommand == "HEAT_SETPOINT_CHANGED") then
+    local setPoint = tonumber(tParams["SETPOINT"])
+    if (setPoint ~= HvacProxyData.heatPoint) then
+      HvacProxyData.heatPoint = setPoint
+      SendToProxy(PROXY_ID, strCommand, tParams)
+    end
+  elseif (strCommand == "COOL_SETPOINT_CHANGED") then
+    local setPoint = tonumber(tParams["SETPOINT"])
+    if (setPoint ~= HvacProxyData.coolPoint) then
+      HvacProxyData.coolPoint = setPoint
+      SendToProxy(PROXY_ID, strCommand, tParams)
+    end
+  elseif (strCommand == "TEMPERATURE_CHANGED") then
+    local temperature = tonumber(tParams["TEMPERATURE"])
+    if (temperature ~= HvacProxyData.temperature) then
+      HvacProxyData.temperature = temperature
+      SendToProxy(PROXY_ID, strCommand, tParams)
+    end
+  else
+    print("Un-handled command " .. strCommand)
+    return false
+  end
+  return true
+end
+
+function PRX_CMD.DRVIER_EXTENDS_CMD(idBinding, strCommand, tParams)
+--function ReceivedFromProxy(idBinding, strCommand, tParams)
+  if (tParams ~= nil) then
+    Dbg.Debug("ReceivedFromProxy (" .. idBinding .. ", " .. strCommand .. ")" .. DriverLib.tableToString(tParams ,""))
+  else
+    Dbg.Debug("ReceivedFromProxy (" .. idBinding .. ", " .. strCommand .. "){}")
+  end
+  CommandInterpreter(idBinding, strCommand, tParams)
+end
+
+PROXY_ID = 5001
+function CommandInterpreter(idBinding, strCommand, tParams)
+  if (strCommand ~= nill) then
+    if(tParams == nill) then    -- initial table variable if nill
+      tParams = {}
+    end
+    -- notifies
+    if (strCommand == "CURRENT_SETTINGS") then
+      local tParams = {
+        HVACMODE = HvacProxyData.mode,
+        FANMODE = HvacProxyData.fanMode,
+        HOLDMODE = "OFF",
+        HEAT_SETPOINT = HvacProxyData.heatPoint,
+        COOL_SETPOINT = HvacProxyData.coolPoint,
+        SCALE = HvacProxyData.scale,
+        CURRTEMP = HvacProxyData.temperature,
+      }
+      SendToProxy(PROXY_ID, strCommand, tParams)
+    elseif (strCommand == "SCALE_CHANGED") then
+      HvacProxyData.scale = tParams["SCALE"]
+      SendToProxy(PROXY_ID, strCommand, tParams)
+    elseif (strCommand == "SET_MODE") then
+      local HVACMode = tParams["HVACMODE"]
+      if (HVACMode ~= HvacProxyData.mode) then
+        changeMode(HVACMode)
+        proxySetMode()
+      end
+    elseif (strCommand == "SET_FAN_MODE") then
+      local fanMode = tParams["FANMODE"]
+      if (fanMode ~= HvacProxyData.fanMode) then
+        HvacProxyData.fanMode = fanMode
+        SendToProxy(PROXY_ID, "FANMODE_CHANGED", tParams)
+        proxySetFanMode()
+      end
+    elseif (strCommand == "SET_HEAT_SETPOINT")  then
+      local heatSetPoint = tonumber(tParams["SETPOINT"])
+      if (heatSetPoint ~= HvacProxyData.heatPoint) then
+        HvacProxyData.heatPoint = heatSetPoint
+        SendToProxy(PROXY_ID, "HEAT_SETPOINT_CHANGED", tParams)
+        if (HvacProxyData.mode == "HEAT") then
+          proxySetTemperature()
+        end
+      end
+    elseif (strCommand == "SET_COOL_SETPOINT") then
+      local coolSetPoint = tonumber(tParams["SETPOINT"])
+      if (coolSetPoint ~= HvacProxyData.coolPoint) then
+        HvacProxyData.coolPoint = coolSetPoint
+        SendToProxy(PROXY_ID, "COOL_SETPOINT_CHANGED", tParams)
+        proxySetTemperature()
+      end
+    elseif (strCommand == "SET_SCALE") then
+      local scale = tParams["SCALE"]
+      changeScale(scale)
+--    else
+--      SendToProxy(PROXY_ID, strCommand, tParams)
+    end
+  end
+end
+
+function updateSetPoints()
+  local tParams={}
+  tParams.SETPOINT = toInt(HvacProxyData.coolPoint)
+  SendToProxy(PROXY_ID, "COOL_SETPOINT_CHANGED", tParams)
+  tParams.SETPOINT = toInt(HvacProxyData.heatPoint)
+  SendToProxy(PROXY_ID, "HEAT_SETPOINT_CHANGED", tParams)
+end
+function changeMode(HVACMode)
+  HvacProxyData.mode = HVACMode
+  local tParams = {HVACMODE=HVACMode}
+  SendToProxy(PROXY_ID, "HVACMODE_CHANGED", tParams)
+  --updateSetPoints()
+end
+function changeScale(newScale)
+  if (newScale == HvacProxyData.scale) then return end
+  HvacProxyData.scale = newScale
+  if (HvacProxyData.scale == "C") then
+    HvacProxyData.temperature =TemperatureF2C(HvacProxyData.temperature)
+    HvacProxyData.coolPoint = TemperatureF2C(HvacProxyData.coolPoint)
+    HvacProxyData.heatPoint = TemperatureF2C(HvacProxyData.heatPoint)
+  else
+    HvacProxyData.temperature = TemperatureC2F(HvacProxyData.temperature)
+    HvacProxyData.coolPoint = TemperatureC2F(HvacProxyData.coolPoint)
+    HvacProxyData.heatPoint = TemperatureC2F(HvacProxyData.heatPoint)
+  end
+  local tParams1={SCALE = HvacProxyData.scale}
+  SendToProxy(PROXY_ID, "SCALE", tParams1)
+  local tParams2={TEMPERATURE = toInt(HvacProxyData.temperature+0.5)}
+  SendToProxy(PROXY_ID, "TEMPERATURE_CHANGED", tParams2)
+  
+  updateSetPoints()
+end
+
+function proxySetMode()
+  print("proxySetMode()")
+  print(HvacProxyData.mode)
+  local mode = HvacProxyData.mode
+  local modeCode = 0xE1
+  if (mode == "AUTO") then
+    modeCode = 0
+  elseif (mode == "OFF") then
+    cmdStartStop({RunningState=0})
+    PropertyHandlingSpecialist:updateProperty("RunningState",0)
+    return
+  elseif (mode == "HEAT") then
+    modeCode = 1
+  elseif (mode == "COOL") then
+    modeCode = 0
+  else
+    print("Unsupport mode " + mode)
+    return
+  end
+  local curRunning = PropertyHandlingSpecialist:getPropertyValue("RunningState")
+  if (curRunning ~= 1) then
+    PropertyHandlingSpecialist:updateProperty("RunningState",1)
+    cmdStartStop({RunningState=1})
+    DriverLib.sleep(0.5)
+  end
+  PropertyHandlingSpecialist:updateProperty("WorkingMode", modeCode)
+  cmdSetWorkMode({WorkingMode=modeCode})
+end
+
+function proxySetTemperature()
+  local tgtTempr = 0
+  if (HvacProxyData.mode == "HEAT") then
+    tgtTempr = HvacProxyData.heatPoint
+  else
+    tgtTempr = HvacProxyData.coolPoint
+  end
+  if (HvacProxyData.scale == "F") then
+    tgtTempr = toInt(TemperatureF2C(tgtTempr))
+  end
+  if (tgtTempr < 5) then tgtTempr = 5 end
+  if (tgtTempr > 35) then tgtTempr = 35 end
+  PropertyHandlingSpecialist:updateProperty("SettingTemperature", tgtTempr)
+  cmdSetTemperature({SettingTemperature = tgtTempr})
+end
+
+function proxySetFanMode()
+  local fanMode = HvacProxyData.fanMode
+  local value = 0
+  if (fanMode == "LOW") then
+    value = 3
+  elseif (fanMode == "MED") then
+    value = 2
+  elseif (fanMode == "HIGH") then
+    value = 1
+  elseif (fanMode == "AUTO") then
+    value = 0 -------TODO
+  else
+    print("Unsupported fan mode " .. tostring(fanMode or "nil"))
+    return
+  end
+  PropertyHandlingSpecialist:updateProperty("WindSpeed", value)
+  cmdSetWindSpeed({WindSpeed=value})
+end
+
+function updateProxyData(result)
+  -- TODO: updateProxyData
+  local curValue = nil
+  -- mode
+  if (result.RunningState == 0) then
+    curValue = "OFF"
+  else
+    if (result.WorkingMode == 1) then
+      curValue = "HEAT"
+    elseif (result.WorkingMode == 0) then
+      curValue = "COOL"
+    end
+  end
+  if (curValue ~= nil) and (curValue ~= HvacProxyData.mode) then
+    changeMode(curValue)
+  end
+  
+  -- setpoint
+  if (result.SettingTemperature ~= nil) then
+    curValue = tonumber(result.SettingTemperature)
+    if (HvacProxyData.scale == "F") then
+      curValue = TemperatureC2F(curValue)
+    end
+    if (HvacProxyData.mode == "HEAT") then
+      HvacProxyData.heatPoint = curValue
+    else
+      HvacProxyData.coolPoint = curValue
+    end
+    updateSetPoints()
+  end
+  
+  -- temperature
+  if (result.RoomTemperature ~= nil) then
+    curValue = result.RoomTemperature
+    if (HvacProxyData.scale == "F") then
+      curValue = TemperatureC2F(curValue)
+    end
+    HvacProxyData.temperature = curValue
+    SendToProxy(PROXY_ID, "TEMPERATURE_CHANGED", {TEMPERATURE = HvacProxyData.temperature})
+  end
+  
+  --fan mode
+  if (result.WindSpeed ~= nil) then
+    curValue = nil
+    if (result.WindSpeed == 3) then
+      curValue = "LOW"
+    elseif (result.WindSpeed == 2) then
+      curValue = "MED"
+    elseif (result.WindSpeed == 1) then
+      curValue = "HIGH"
+    elseif (result.WindSpeed == 0) then
+      curValue = "AUTO"
+    end
+    if (curValue ~= nil) and (curValue ~= HvacProxyData.fanMode) then
+      HvacProxyData.fanMode = curValue
+      SendToProxy(PROXY_ID, "FANMODE_CHANGED", {FANMODE = HvacProxyData.fanMode})
+    end
+  end
+end
+
+
+
+]]></script>
+        <actions>
+            <action>
+                <name>Set All</name>
+                <command>setAllData</command>
+            </action>
+            <action>
+                <name>Query State</name>
+                <command>getAllData</command>
+            </action>
+            <action>
+                <name>Show Status</name>
+                <command>ShowStatus</command>
+            </action>
+        </actions>
+        <commands>
+            <command>
+                <name>queryAll</name>
+                <description>query all in NAME</description>
+            </command>
+            <command>
+                <name>startStop</name>
+                <description>startStop in NAME</description>
+                <params>
+                    <param>
+                        <name>RunningState</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Stop</item>
+                            <item>Running</item>
+                        </items>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>setWorkMode</name>
+                <description>setWorkMode in NAME</description>
+                <params>
+                    <param>
+                        <name>WorkingMode</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Heating</item>
+                            <item>Cooling</item>
+                        </items>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>setFanMode</name>
+                <description>setFanMode in NAME</description>
+                <params>
+                    <param>
+                        <name>WindSpeed</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Auto</item>
+                            <item>High</item>
+                            <item>Medium</item>
+                            <item>Low</item>
+                        </items>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>setKeyLock</name>
+                <description>setKeyLock in NAME</description>
+                <params>
+                    <param>
+                        <name>KeyPressLock</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Unlock</item>
+                            <item>Locked</item>
+                        </items>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>setTemperature</name>
+                <description>setTemperature in NAME</description>
+                <params>
+                    <param>
+                        <name>SettingTemperature</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>5</minimum>
+                        <maximum>35</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>SetCompensationTmpr</name>
+                <description>SetCompensationTmpr in NAME</description>
+                <params>
+                    <param>
+                        <name>CompensationTmpr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>-9</minimum>
+                        <maximum>9</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>SetAllControl</name>
+                <description>SetAllControl in NAME</description>
+                <params>
+                    <param>
+                        <name>RunningState</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Stop</item>
+                            <item>Running</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>WorkingMode</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Heating</item>
+                            <item>Cooling</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>WindSpeed</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Auto</item>
+                            <item>High</item>
+                            <item>Medium</item>
+                            <item>Low</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>KeyPressLock</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Unlock</item>
+                            <item>Locked</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>SettingTemperature</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>5</minimum>
+                        <maximum>35</maximum>
+                    </param>
+                    <param>
+                        <name>CompensationTmpr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>-9</minimum>
+                        <maximum>9</maximum>
+                    </param>
+                </params>
+            </command>
+        </commands>
+        <properties>
+            <property>
+                <name>Debug Level</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>2 - Warning</default>
+                <items>
+                    <item>0 - Alert</item>
+                    <item>1 - Error</item>
+                    <item>2 - Warning</item>
+                    <item>3 - Info</item>
+                    <item>4 - Trace</item>
+                    <item>5 - Debug</item>
+                </items>
+            </property>
+            <property>
+                <name>Debug Mode</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>Off</default>
+                <items>
+                    <item>Off</item>
+                    <item>Print</item>
+                    <item>Log</item>
+                    <item>Print and Log</item>
+                </items>
+            </property>
+            <property>
+                <name>Address</name>
+                <type>RANGED_INTEGER</type>
+                <readonly>false</readonly>
+                <default>4096</default>
+                <minimum>4096</minimum>
+                <maximum>65534</maximum>
+            </property>
+            <property>
+                <name>Polling Seconds</name>
+                <type>RANGED_INTEGER</type>
+                <readonly>false</readonly>
+                <default>10</default>
+                <minimum>0</minimum>
+                <maximum>86400</maximum>
+            </property>
+            <property>
+                <name>Use Serial Agent</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>Yes</default>
+                <items>
+                    <item>Yes</item>
+                    <item>No</item>
+                </items>
+            </property>
+            <property>
+                <name>Serial Agent Device ID</name>
+                <type>RANGED_INTEGER</type>
+                <readonly>false</readonly>
+                <default>1</default>
+                <minimum>0</minimum>
+                <maximum>65535</maximum>
+            </property>
+            <property>
+                <name>Dump Serial Data</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default />
+                <items>
+                    <item>Yes</item>
+                    <item>No</item>
+                </items>
+            </property>
+            <property>
+                <name>Error Message</name>
+                <type>STRING</type>
+                <readonly>true</readonly>
+                <default>SUCCESS</default>
+            </property>
+            <property>
+                <name>Room Temperature</name>
+                <type>RANGED_INTEGER</type>
+                <readonly>true</readonly>
+                <default>0</default>
+                <minimum>0</minimum>
+                <maximum>65535</maximum>
+            </property>
+            <property>
+                <name>Running State</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>Stop</default>
+                <items>
+                    <item>Stop</item>
+                    <item>Running</item>
+                </items>
+            </property>
+            <property>
+                <name>Working Mode</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>Cooling</default>
+                <items>
+                    <item>Heating</item>
+                    <item>Cooling</item>
+                </items>
+            </property>
+            <property>
+                <name>Wind Speed</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>Auto</default>
+                <items>
+                    <item>Auto</item>
+                    <item>High</item>
+                    <item>Medium</item>
+                    <item>Low</item>
+                </items>
+            </property>
+            <property>
+                <name>Set Temperature</name>
+                <type>RANGED_INTEGER</type>
+                <readonly>false</readonly>
+                <default>25</default>
+                <minimum>5</minimum>
+                <maximum>35</maximum>
+            </property>
+            <property>
+                <name>Compensation Temperature</name>
+                <type>RANGED_INTEGER</type>
+                <readonly>false</readonly>
+                <default>0</default>
+                <minimum>-9</minimum>
+                <maximum>9</maximum>
+            </property>
+            <property>
+                <name>KeyPress Lock State</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>Unlock</default>
+                <items>
+                    <item>Unlock</item>
+                    <item>Locked</item>
+                </items>
+            </property>
+            <property>
+                <name>Control Type</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>Only Control 1 Device</default>
+                <items>
+                    <item>Only Control 1 Device</item>
+                    <item>Send To All Devices</item>
+                </items>
+            </property>
+        </properties>
+    </config>
+    <composer_categories>
+        <category>HVAC</category>
+    </composer_categories>
+    <events>
+        <event>
+            <id>1</id>
+            <name>Wind Speed Changed</name>
+            <description>Wind Speed Changed from NAME</description>
+        </event>
+        <event>
+            <id>2</id>
+            <name>KeyPress Lock State Changed</name>
+            <description>KeyPress Lock State Changed from NAME</description>
+        </event>
+        <event>
+            <id>3</id>
+            <name>Running State Changed</name>
+            <description>Running State Changed from NAME</description>
+        </event>
+        <event>
+            <id>4</id>
+            <name>Work Mode Changed</name>
+            <description>Work Mode Changed from NAME</description>
+        </event>
+        <event>
+            <id>5</id>
+            <name>Compensation Temperature Changed</name>
+            <description>Compensation Temperature Changed from NAME</description>
+        </event>
+        <event>
+            <id>6</id>
+            <name>Room Temperature Changed</name>
+            <description>Room Temperature Changed from NAME</description>
+        </event>
+    </events>
+</devicedata>

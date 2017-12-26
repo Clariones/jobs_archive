@@ -1,0 +1,2244 @@
+<devicedata>
+    <copyright>Copyright 2014 Control4 Corporation.  All rights reserved.</copyright>
+    <creator>SkyNet</creator>
+    <manufacturer>SCHIDERON</manufacturer>
+    <name>SCHIDERON Transnet Gateway</name>
+    <model>Transnet Gateway</model>
+    <created>03/02/2016 3:17 PM</created>
+    <modified>03/28/2016 1:13 PM</modified>
+    <version>10</version>
+    <small>devices_sm\c4.gif</small>
+    <large>devices_lg\c4.gif</large>
+    <control>lua_gen</control>
+    <controlmethod>serial</controlmethod>
+    <driver>DriverWorks</driver>
+    <search_type>SkyNet</search_type>
+    <templatedescription>Base Template, used in all templates.</templatedescription>
+    <combo>True</combo>
+    <OnlineCategory>others</OnlineCategory>
+    <proxies qty="1">
+        <proxy>Transnet_232_SCHIDREON_Gateway</proxy>
+    </proxies>
+    <connections>
+        <connection>
+            <id>1</id>
+            <facing>1</facing>
+            <connectionname>RS232</connectionname>
+            <type>1</type>
+            <consumer>True</consumer>
+            <audiosource>False</audiosource>
+            <videosource>False</videosource>
+            <linelevel>True</linelevel>
+            <classes>
+                <class>
+                    <classname>RS_232</classname>
+                </class>
+            </classes>
+        </connection>
+        <connection>
+            <id>2</id>
+            <facing>1</facing>
+            <connectionname>Transnet PORT</connectionname>
+            <type>1</type>
+            <consumer>False</consumer>
+            <audiosource>False</audiosource>
+            <videosource>False</videosource>
+            <linelevel>False</linelevel>
+            <classes>
+                <class>
+                    <classname>TRANSNET_PORT</classname>
+                </class>
+            </classes>
+        </connection>
+    </connections>
+    <config>
+        <identify_text>SCHIDERON Transnet Gateway</identify_text>
+        <power_management_method>AlwaysOn</power_management_method>
+        <power_command_delay>0</power_command_delay>
+        <power_delay>0</power_delay>
+        <power_command_needed>False</power_command_needed>
+        <serialsettings>9600 8 none 1 none 232</serialsettings>
+        <documentation>
+        </documentation>
+        <script><![CDATA[
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+-- Driver Declarations
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+--[[
+  Command Handler Tables
+--]]
+EX_CMD = {}
+PRX_CMD = {}
+NOTIFY = {}
+DEV_MSG = {}
+LUA_ACTION = {}
+
+--[[
+Tables of functions
+The following tables are function containers that are called within the following functions:  
+
+  OnDriverInit()
+    - first calls all functions contained within ON_DRIVER_EARLY_INIT table
+    - then calls all functions contained within ON_DRIVER_INIT table
+  OnDriverLateInit()
+    - calls all functions contained within ON_DRIVER_LATEINIT table
+  OnDriverUpdate()
+    - calls all functions contained within ON_DRIVER_UPDATE table
+  OnDriverDestroyed()
+    - calls all functions contained within ON_DRIVER_DESTROYED table
+  OnPropertyChanged()
+    - calls all functions contained within ON_PROPERTY_CHANGED table
+--]]
+ON_DRIVER_INIT = {}
+ON_DRIVER_EARLY_INIT = {}
+ON_DRIVER_LATEINIT = {}
+ON_DRIVER_UPDATE = {}
+ON_DRIVER_DESTROYED = {}
+ON_PROPERTY_CHANGED = {}
+
+-- Constants
+DEFAULT_PROXY_BINDINGID = 5001
+    
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+-- Common Driver Code
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+--[[
+  OnPropertyChanged
+    Function called by Director when a property changes value.
+  Parameters
+    sProperty
+      Name of property that has changed.
+  Remarks
+    The value of the property that has changed can be found with: Properties[sName]. Note
+    that OnPropertyChanged is not called when the Property has been changed by the driver
+    calling the UpdateProperty command, only when the Property is changed by the user from
+    the Properties Page. This function is called by Director when a property changes value.
+--]]
+function OnPropertyChanged(sProperty)
+  Dbg:Trace("OnPropertyChanged(" .. sProperty .. ") changed to: " .. Properties[sProperty])
+
+  local propertyValue = Properties[sProperty]
+  
+  -- Remove any spaces (trim the property)
+  local trimmedProperty = string.gsub(sProperty, " ", "")
+
+  -- if function exists then execute (non-stripped)
+  if (ON_PROPERTY_CHANGED[sProperty] ~= nil and type(ON_PROPERTY_CHANGED[sProperty]) == "function") then
+    ON_PROPERTY_CHANGED[sProperty](propertyValue)
+    return
+  -- elseif trimmed function exists then execute
+  elseif (ON_PROPERTY_CHANGED[trimmedProperty] ~= nil and type(ON_PROPERTY_CHANGED[trimmedProperty]) == "function") then
+    ON_PROPERTY_CHANGED[trimmedProperty](propertyValue)
+    return
+  end
+  
+  Utils.onPropertyChanged(sProperty, propertyValue)
+  if (type(OnPropertyChanged4DriverExt) == "function") then
+    OnPropertyChanged4DriverExt(sProperty, propertyValue)
+  end
+end
+
+function ON_PROPERTY_CHANGED.DebugMode(propertyValue)
+  gDebugTimer:KillTimer()
+  Dbg:OutputPrint(propertyValue:find("Print") ~= nil)
+  Dbg:OutputC4Log(propertyValue:find("Log") ~= nil)
+  if (propertyValue == "Off") then return end
+  gDebugTimer:StartTimer()
+end
+
+function ON_PROPERTY_CHANGED.DebugLevel(propertyValue)
+  Dbg:SetLogLevel(tonumber(string.sub(propertyValue, 1, 1)))
+end
+
+---------------------------------------------------------------------
+-- ExecuteCommand Code
+---------------------------------------------------------------------
+--[[
+  ExecuteCommand
+    Function called by Director when a command is received for this DriverWorks driver.
+    This includes commands created in Composer programming.
+  Parameters
+    sCommand
+      Command to be sent
+    tParams
+      Lua table of parameters for the sent command
+--]]
+function ExecuteCommand(sCommand, tParams)
+  Dbg:Trace("ExecuteCommand(" .. sCommand .. "): " .. Utils.tableToString(tParams))
+
+  -- Remove any spaces (trim the command)
+  local trimmedCommand = string.gsub(sCommand, " ", "")
+
+  -- if function exists then execute (non-stripped)
+  if (EX_CMD[sCommand] ~= nil and type(EX_CMD[sCommand]) == "function") then
+    EX_CMD[sCommand](tParams)
+  -- elseif trimmed function exists then execute
+  elseif (EX_CMD[trimmedCommand] ~= nil and type(EX_CMD[trimmedCommand]) == "function") then
+    EX_CMD[trimmedCommand](tParams)
+  -- handle the command
+  elseif (EX_CMD[sCommand] ~= nil) then
+    QueueCommand(EX_CMD[sCommand])
+  else
+    Dbg:Alert("ExecuteCommand: Unhandled command = " .. sCommand)
+  end
+end
+
+--[[
+  Define any functions of commands (EX_CMD.<command>) received from ExecuteCommand that need to be handled by the driver.
+--]]
+
+--[[
+  EX_CMD.LUA_ACTION
+    Function called for any actions executed by the user from the Actions Tab in Composer.
+--]]
+function EX_CMD.LUA_ACTION(tParams)
+  if tParams ~= nil then
+    for cmd,cmdv in pairs(tParams) do
+      if cmd == "ACTION" then
+        if (LUA_ACTION[cmdv] ~= nil) then
+          LUA_ACTION[cmdv]()
+        else
+          Dbg:Alert("Undefined Action")
+          Dbg:Alert("Key: " .. cmd .. " Value: " .. cmdv)
+        end
+      else
+        Dbg:Alert("Undefined Command")
+        Dbg:Alert("Key: " .. cmd .. " Value: " .. cmdv)
+      end
+    end
+  end
+end
+
+--[[
+  LUA_ACTION.DisplayGlobals
+    Implementation of Action "Display Globals". Executed when selecting the "Display Globals" action within Composer.
+    Provided as an example for actions.
+--]]
+function LUA_ACTION.DisplayGlobals()
+  print ("Global Variables")
+  print ("----------------------------")
+
+  for k,v in pairs(_G) do -- globals`
+    if not (type(v) == "function") then
+      --print(k .. ":  " .. tostring(v))
+      if (string.find(k, "^g%L")  == 1) then
+        print(k .. ":  " .. tostring(v))
+        if (type(v) == "table") then
+          PrintTable(v, "   ")
+        end
+      end
+    end
+  end
+
+  print ("")
+end
+
+function PrintTable(tValue, sIndent)
+  sIndent = sIndent or "   "
+  for k,v in pairs(tValue) do
+    print(sIndent .. tostring(k) .. ":  " .. tostring(v))
+    if (type(v) == "table") then
+      PrintTable(v, sIndent .. "   ")
+    end
+  end
+end
+
+---------------------------------------------------------------------
+-- ReceivedFromProxy Code
+---------------------------------------------------------------------
+--[[
+  ReceivedFromProxy(idBinding, sCommand, tParams)
+    Function called by Director when a proxy bound to the specified binding sends a
+    BindMessage to the DriverWorks driver.
+
+  Parameters
+    idBinding
+      Binding ID of the proxy that sent a BindMessage to the DriverWorks driver.
+    sCommand
+      Command that was sent
+    tParams
+      Lua table of received command parameters
+--]]
+function ReceivedFromProxy(idBinding, sCommand, tParams)
+  if (sCommand ~= nil) then
+    if(tParams == nil)    -- initial table variable if nil
+      then tParams = {}
+    end
+    Dbg:Trace("ReceivedFromProxy(): " .. sCommand .. " on binding " .. idBinding .. "; Call Function " .. sCommand .. "(): " .. Utils.tableToString(tParams))
+
+    if (PRX_CMD[sCommand]) ~= nil then
+      PRX_CMD[sCommand](idBinding, tParams)
+    else
+      Dbg:Alert("ReceivedFromProxy: Unhandled command = " .. sCommand)
+    end
+  end
+end
+
+---------------------------------------------------------------------
+-- Notification Code
+---------------------------------------------------------------------
+-- notify with parameters
+function SendNotify(notifyText, Parms, bindingID)
+  C4:SendToProxy(bindingID, notifyText, Parms, "NOTIFY")
+end
+
+-- A notify with no parameters
+function SendSimpleNotify(notifyText, ...)
+  bindingID = select(1, ...) or DEFAULT_PROXY_BINDINGID
+  C4:SendToProxy(bindingID, notifyText, {}, "NOTIFY")
+end
+
+---------------------------------------------------------------------
+-- Initialization/Destructor Code
+---------------------------------------------------------------------
+--[[
+  OnDriverInit
+    Invoked by director when a driver is loaded. This API is provided for the driver developer to contain all of the driver
+    objects that will require initialization.
+--]]
+function OnDriverInit()
+  C4:ErrorLog("INIT_CODE: OnDriverInit()")
+  -- Call all ON_DRIVER_EARLY_INIT functions.
+  for k,v in pairs(ON_DRIVER_EARLY_INIT) do
+    if (ON_DRIVER_EARLY_INIT[k] ~= nil and type(ON_DRIVER_EARLY_INIT[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_EARLY_INIT." .. k .. "()")
+      ON_DRIVER_EARLY_INIT[k]()
+    end
+  end
+
+  -- Call all ON_DRIVER_INIT functions
+  for k,v in pairs(ON_DRIVER_INIT) do
+    if (ON_DRIVER_INIT[k] ~= nil and type(ON_DRIVER_INIT[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_INIT." .. k .. "()")
+      ON_DRIVER_INIT[k]()
+    end
+  end
+
+  -- Fire OnPropertyChanged to set the initial Headers and other Property global sets, they'll change if Property is changed.
+  for k,v in pairs(Properties) do
+    OnPropertyChanged(k)
+  end
+  
+  Utils.initStep = 5
+  
+  if (type(AfterPropertiesInitialUpdate) == "function") then
+    AfterPropertiesInitialUpdate()
+  end
+  
+  Utils.initStep = 6
+end
+
+--[[
+  OnDriverUpdate
+    Invoked by director when an update to a driver is requested. This request can occur either by adding a new version of a driver
+    through the driver search list or right clicking on the driver and selecting "Update Driver" from within ComposerPro.
+    Its purpose is to initialize all components of the driver that are reset during a driver update.
+--]]
+function OnDriverUpdate()
+  C4:ErrorLog("INIT_CODE: OnDriverUpdate()")
+  
+  -- Call all ON_DRIVER_UPDATE functions
+  for k,v in pairs(ON_DRIVER_UPDATE) do
+    if (ON_DRIVER_UPDATE[k] ~= nil and type(ON_DRIVER_UPDATE[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_UPDATE." .. k .. "()")
+      ON_DRIVER_UPDATE[k]()
+    end
+  end
+end
+
+--[[
+  OnDriverLateInit
+    Invoked by director after all drivers in the project have been loaded. This API is provided
+    for the driver developer to contain all of the driver objects that will require initialization
+    after all drivers in the project have been loaded.
+--]]
+function OnDriverLateInit()
+  C4:ErrorLog("INIT_CODE: OnDriverLateInit()")
+  
+  -- Call all ON_DRIVER_LATEINIT functions
+  for k,v in pairs(ON_DRIVER_LATEINIT) do
+    if (ON_DRIVER_LATEINIT[k] ~= nil and type(ON_DRIVER_LATEINIT[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_LATEINIT." .. k .. "()")
+      ON_DRIVER_LATEINIT[k]()
+    end
+  end
+end
+
+
+--[[
+  OnDriverDestroyed
+    Function called by Director when a driver is removed. Release things this driver has allocated such as timers.
+--]]
+function OnDriverDestroyed()
+  C4:ErrorLog("INIT_CODE: OnDriverDestroyed()")
+  -- Call all ON_DRIVER_DESTROYED functions
+  for k,v in pairs(ON_DRIVER_DESTROYED) do
+    if (ON_DRIVER_DESTROYED[k] ~= nil and type(ON_DRIVER_DESTROYED[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_DESTROYED." .. k .. "()")
+      ON_DRIVER_DESTROYED[k]()
+    end
+  end
+end
+
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+-- Debug Logging Code
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+Log = {}
+
+-- Create a Table with Logging functions
+function Log:Create()
+  
+  -- table for logging functions
+  local lt = {}
+  
+  lt._logLevel = 0
+  lt._outputPrint = false
+  lt._outputC4Log = false
+  lt._logName =  "Set Log Name to display"
+  function lt:IsLoggable(level)
+    return self._logLevel >= level
+  end
+  
+  function lt:SetLogLevel(level)
+    self._logLevel = level
+  end
+  
+  function lt:OutputPrint(value)
+    self._outputPrint = value
+  end
+  
+  function lt:OutputC4Log(value)
+    self._outputC4Log = value
+  end
+  
+  function lt:SetLogName(name)
+    self._logName = name
+  end
+
+  function lt:Enabled()
+    return (self._outputPrint or self._outputC4Log)
+  end
+  
+  function lt:PrintTable(tValue, sIndent)
+    if (type(tValue) == "table") then
+      if (self._outputPrint) then
+        for k,v in pairs(tValue) do
+          print(sIndent .. tostring(k) .. ":  " .. tostring(v))
+          if (type(v) == "table") then
+            self:PrintTable(v, sIndent .. "   ")
+          end
+        end
+      end
+  
+      if (self._outputC4Log) then
+        for k,v in pairs(tValue) do
+          C4:ErrorLog(self._logName .. ": " .. sIndent .. tostring(k) .. ":  " .. tostring(v))
+          if (type(v) == "table") then
+            self:PrintTable(v, sIndent .. "   ")
+          end
+        end
+      end
+
+    else
+      if (self._outputPrint) then
+        print (sIndent .. tValue)
+      end
+      
+      if (self._outputC4Log) then
+        C4:ErrorLog(self._logName .. ": " .. sIndent .. tValue)
+      end
+    end
+  end
+    
+  function lt:Print(logLevel, sLogText)
+    if (self._logLevel >= logLevel) then
+      if (type(sLogText) == "table") then
+        self:PrintTable(sLogText, "   ")
+        return
+      end
+      
+      if (self._outputPrint) then
+        print (sLogText)
+      end
+
+      if (self._outputC4Log) then
+        C4:ErrorLog(self._logName .. ": " .. sLogText)
+      end
+    end
+  end
+  
+  function lt:Alert(strDebugText)
+    self:Print(0, strDebugText)
+  end
+  
+  function lt:Error(strDebugText)
+    self:Print(1, strDebugText)
+  end
+  
+  function lt:Warn(strDebugText)
+    self:Print(2, strDebugText)
+  end
+  
+  function lt:Info(strDebugText)
+    self:Print(3, strDebugText)
+  end
+  
+  function lt:Trace(strDebugText)
+    self:Print(4, strDebugText)
+  end
+  
+  function lt:Debug(strDebugText)
+    self:Print(5, strDebugText)
+  end
+  
+  return lt
+end
+
+function ON_DRIVER_EARLY_INIT.LogLib()
+  -- Create and initialize debug logging
+  Dbg = Log.Create()
+  Dbg:SetLogName("base_template PLEASE CHANGE")
+end
+
+function ON_DRIVER_INIT.LogLib()
+  -- Create Debug Timer
+  gDebugTimer = Timer:Create("Debug", 45, "MINUTES", OnDebugTimerExpired)
+end
+
+--[[
+  OnDebugTimerExpired
+    Debug timer callback function
+--]]
+function OnDebugTimerExpired()
+  Dbg:Warn("Turning Debug Mode Off (timer expired)")
+  gDebugTimer:KillTimer()
+  C4:UpdateProperty("Debug Mode", "Off")
+  OnPropertyChanged("Debug Mode")
+end
+      
+---------------------------------------------------------------------
+-- Timer Code
+---------------------------------------------------------------------
+Timer = {}
+
+-- Create a Table with Timer functions
+function Timer:Create(name, interval, units, Callback, repeating, Info)
+  -- timers table
+  local tt = {}
+  
+  tt._name = name
+  tt._timerID = TimerLibGetNextTimerID()
+  tt._interval = interval
+  tt._units = units
+  tt._repeating = repeating or false
+  tt._Callback = Callback
+  tt._info = Info or ""
+  tt._id = 0
+
+  function tt:StartTimer(...)
+    self:KillTimer()
+    
+    -- optional parameters (interval, units, repeating)
+    if ... then
+      local interval = select(1, ...)
+      local units = select(2, ...)
+      local repeating = select(3, ...)
+      
+      self._interval = interval or self._interval
+      self._units = units or self._units
+      self._repeating = repeating or self._repeating
+    end
+    
+    if (self._interval > 0) then
+      Dbg:Trace("Starting Timer: " .. self._name)
+      self._id = C4:AddTimer(self._interval, self._units, self._repeating)
+    end
+  end
+
+  function tt:KillTimer()
+    if (self._id) then
+      self._id = C4:KillTimer(self._id)
+    end
+  end
+  
+  function tt:TimerStarted()
+    return (self._id ~= 0)
+  end
+      
+  function tt:TimerStopped()
+    return not self:TimerStarted()
+  end
+  
+  gTimerLibTimers[tt._timerID] = tt
+  Dbg:Trace("Created timer " .. tt._name)
+  
+  return tt
+end
+
+function TimerLibGetNextTimerID()
+  gTimerLibTimerCurID = gTimerLibTimerCurID + 1
+  return gTimerLibTimerCurID
+end
+
+function ON_DRIVER_EARLY_INIT.TimerLib()
+  gTimerLibTimers = {}
+  gTimerLibTimerCurID = 0
+end
+
+function ON_DRIVER_DESTROYED.TimerLib()
+  -- Kill open timers
+  for k,v in pairs(gTimerLibTimers) do
+    v:KillTimer()
+  end
+end
+
+--[[
+  OnTimerExpired
+    Function called by Director when the specified Control4 timer expires.
+  Parameters
+    idTimer
+      Timer ID of expired timer.
+--]]
+function OnTimerExpired(idTimer)
+  for k,v in pairs(gTimerLibTimers) do
+    if (idTimer == v._id) then
+      if (v._Callback) then
+        v._Callback(v._info)
+      end
+    end
+  end
+  
+  if (type(OnTimer4DriverExt)=="function") then
+    OnTimer4DriverExt(idTimer)
+  end
+end
+      
+      
+-------------------------------------------------------------------------------
+-- Below are common driver script
+
+------------------ RS232 assembler -----------------
+RS232Handler = {
+  _config = {pieceSize=8, pieceTimeout=3, callBack=nil},
+  _recvStrDatas = {},
+  _timerId = nil,
+  
+  onPieceRecieved = function(self, idBinding, strData)
+    if strData == nil then return end
+    
+    local tgtTbl = self._recvStrDatas[idBinding]
+    if (tgtTbl == nil) then 
+      self._recvStrDatas[idBinding] = {timerCnt=0,datas={}} 
+      tgtTbl = self._recvStrDatas[idBinding]
+    end
+    table.insert(tgtTbl.datas, strData)
+    if (self:_isLastPiece(strData)) then
+      tgtTbl.timerCnt = 0
+      self:_handleFrameData(idBinding)
+    else
+      tgtTbl.timerCnt = self._config.pieceTimeout
+    end
+  end,
+  
+  _isLastPiece = function(self, strData)
+    return #strData < self._config.pieceSize
+  end,
+  
+  onTimer = function(self, idTimer)
+    if not self._timerId then print("RS232 Handler not inited") return end
+    if (idTimer ~= self._timerId) then return end
+    -- Now it's my duty call
+    self:_cutdownTimer()
+  end,
+  
+  init = function(self, arg)
+    if (arg.pieceSize) then self._config.pieceSize = arg.pieceSize end
+    if (arg.pieceTimeout) then self._config.pieceTimeout = arg.pieceTimeout end
+    self._config.callBack = arg.callBack
+    if (type(self._config.callBack) ~= "function") then
+      print("!!!You must init RS232 with a data reciever callback function!")
+      print("!!!You must init RS232 with a data reciever callback function!!")
+      print("!!!You must init RS232 with a data reciever callback function!!!")
+      print("like RS232Handler:init({pieceSize=8, pieceTimeout=3,callBack=OnDataRecieved})")
+      print("   (Important things must say 3 times)")
+      return
+    end
+    
+    self._timerId = C4:AddTimer(10, "MILLISECONDS", true)
+  end,
+  
+  _cutdownTimer = function(self)
+    for idBinding,tbl in pairs(self._recvStrDatas) do
+      if (tbl.timerCnt > 0) then
+        tbl.timerCnt = tbl.timerCnt-1
+        if (tbl.timerCnt == 0) then
+          self:_handleFrameData(idBinding)
+        end
+      end
+    end
+  end,
+  
+  _handleFrameData = function(self, idBinding)
+    local tbl = self._recvStrDatas[idBinding]
+    
+    local str = "";
+    local len = #tbl.datas
+    if (len < 1) then
+      return
+    end
+  
+    for k=1,len do
+      str =  str .. tbl.datas[k]
+    end
+    tbl.datas = {}
+    self._config.callBack(idBinding, str)
+  end,
+}
+
+------------------------------------------------------
+---------------- Common Utils ------------------------
+Utils = {
+  DUMP_DATA_ALL = "All",
+  DUMP_DATA_NO = "No",
+  DUMP_DATA_RECIEVED = "Recieved",
+  OFF = "Off",
+  ON = "On",
+    
+  dumpData = "No",
+  
+  initStep = 0,
+  
+  pollingTimer = nil,
+  pollingDelayTimer = nil,
+  pollingSeconds = 0,
+  pollingDelaySeconds = 0,
+}
+function Utils.TemperatureF2C(fahrenheit)
+  return (tonumber(fahrenheit) - 32) / 1.8
+end
+
+function Utils.TemperatureC2F(celsius)
+  return tonumber(celsius) * 1.8 + 32
+end
+function Utils.byte0 (data)
+  return bit.band(data, 0xFF)
+end
+
+function Utils.byte1 (data)
+  return bit.band(bit.rshift(data, 8), 0xFF)
+end
+function Utils.BEtoUShort (strData)
+  local rst = 0;
+  local byte0, byte1 = string.byte(strData,1,2)
+  return byte0 * 256 + byte1
+end
+function Utils.BEtoShort (strData)
+  local rst = Utils.BEtoUShort(strData)
+  if (rst > 0x7FFF) then
+    return rst - 0x10000
+  end
+  return rst
+end
+function Utils.LEtoUShort (strData)
+  local rst = 0;
+  local byte0, byte1 = string.byte(strData,1,2)
+  return byte1 * 256 + byte0
+end
+function Utils.LEtoShort (strData)
+  local rst = Utils.LEtoUShort(strData)
+  if (rst > 0x7FFF) then
+    return rst - 0x10000
+  end
+  return rst
+end
+function Utils.isEmpty(something)
+  if (something == nil) then return true end
+  if (type(something) == "table") then
+    for k,v in pairs(something) do
+      return false
+    end
+    return true
+  elseif (type(something) == "string") then
+    return string.len(something) == 0
+  end
+  return false
+end
+function Utils.getSortedKeys(tbl)
+  local keyTbl = {}
+  for k,v in pairs(tbl) do
+    table.insert(keyTbl,k)
+  end
+  table.sort(keyTbl)
+  return keyTbl
+end
+function Utils.tableToString(tbl)
+  if (type(tbl) ~= "table") then return "Not a table: " .. tostring(tbl) end
+  local rstStr = "{"
+  local keyTbl = Utils.getSortedKeys(tbl)
+  for i,k in pairs(keyTbl) do
+    local v = tbl[k]
+    if (type(v) == "table") then
+      if (rstStr ~= "{") then
+        rstStr = rstStr .. ", "
+      end
+      rstStr = rstStr .. k .. "=" .. Utils.tableToString(v)
+    else
+      if (rstStr ~= "{") then
+        rstStr = rstStr .. ", "
+      end
+      rstStr = rstStr .. k .. "="
+      if (type(v) == "string") then
+        if (string.find(v,"[^\001-\127]")) then
+          rstStr = rstStr .. "Byte["  .. #v .. "]"
+        else
+          rstStr = rstStr .. "\"" .. (tostring(v) or "nil") .. "\""
+        end
+      else
+        rstStr = rstStr .. (tostring(v) or "nil")
+      end
+    end
+  end
+  return rstStr .. "}"
+end
+function Utils.verifyTableParams(tRules, tParams)
+  for name,rule in pairs(tRules) do
+    if (rule.type=="Number") then
+      local value = tonumber(tParams[name] or "nil")
+      if (value == nil) then
+        return "Member \"" .. name .. "\" must be a number"
+      end
+      if (type(rule.range) == "table") then
+        if (value < rule.range[1]) or (value > rule.range[2]) then
+          return "Member \"" .. name .. "\" should be in range [" .. rule.range[1] .. "," .. rule.range[2] .. "]"
+        end
+      end
+      tParams[name] = value
+    elseif (rule.type == "List") then
+      local value = rule.values[tParams[name] or "nil"]
+      if (value == nil) then
+        local keys = Utils.getSortedKeys(rule.values)
+        return "Member \"" .. name .. "\" should be one of: " .. table.concat(keys,"/")
+      end
+    else
+      return "Not supported verify rule \"".. rule.type .."\""
+    end
+  end
+  return nil
+end
+function Utils.printCurrentTime()
+  print("Current Time:", os.date("%Y-%m-%d %H:%M:%S",os.time()))
+end
+---------- Polling task related methods -------------
+function Utils.pollingTask()
+--  print("pollingTask()")
+--  Utils.printCurrentTime()
+  if (type(DriverPollingTask) == "function") then
+    DriverPollingTask()
+  end
+end
+function Utils.startPollingTask()
+--  print("startPollingTask()")
+--  Utils.printCurrentTime()
+  Utils.pollingTimer = Timer:Create("polling timer", Utils.pollingSeconds, "SECONDS", Utils.pollingTask, true, "polling timer")
+  Utils.pollingTask()
+  Utils.pollingTimer:StartTimer()
+end
+function Utils.startPollingTimer()
+--  print("startPollingTimer()")
+--  Utils.printCurrentTime()
+  if (Utils.pollingDelayTimer) then
+     Utils.pollingDelayTimer:KillTimer()
+  end
+  if (Utils.pollingTimer) then
+     Utils.pollingTimer:KillTimer()
+  end
+  
+  if (Utils.pollingSeconds <= 0) then return end -- If polling-seconds value not a positive number, then do not start polling task
+  if (Utils.pollingDelaySeconds > 0) then 
+    -- If user want start polling after several seconds, then create task which will create real polling task
+    Utils.pollingDelayTimer = Timer:Create("polling delay timer", Utils.pollingDelaySeconds, "SECONDS", Utils.startPollingTask, false, "polling delay timer")
+    Utils.pollingDelayTimer:StartTimer()
+  else
+    Utils.startPollingTask()
+  end
+end
+function ON_DRIVER_LATEINIT.PollingTask()
+  Utils.startPollingTimer()
+end
+----------- Common properties related methods -------------
+function Utils.onPropertyChanged(propName, propVal)
+  if (propName == "Polling Delay Seconds") then
+    Utils.pollingDelaySeconds = tonumber(propVal) or 0
+    if (Utils.initStep >= 5) then Utils.startPollingTimer() end
+  elseif (propName == "Polling Period Seconds") then
+    Utils.pollingSeconds = tonumber(propVal) or 0
+    if (Utils.initStep >= 5) then Utils.startPollingTimer() end
+  elseif (propName == "Dump Data") then
+    Utils.dumpData = propVal
+  end
+end
+function Utils.handleDriverPropertyChange(tblCfg, propName, propValue)
+  local cfg = tblCfg[propName]
+  if (type(cfg) == "function") then cfg(propName, propValue) return end
+end
+
+
+
+
+CONSTS = {
+  DRIVER_TYPE = {DIMMER = "DIMMER", ENV="ENVIRONMENT", HVAC="HVAC", RELAY="RELAY", SCENE="SCENE"},
+  PARAM = {DRV_TYPE="driverType", DRV_ID="driverId", SRC_ADDR="srcAddr", TO_ADDR="toAddr", CHN_IDX="channelIndex", MODBUS="modbusAddr", SCENE="sceneNumber"},
+}
+
+DEVICE_CFG = {
+  protocolVersion = 0x64,
+  CONNECTION_RS232 = 1,
+  CONNECTION_TRANSNET = 2,
+  eventCnt = 1,
+  FanCoilControlCmdParamRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.MODBUS] = {type="Number", range={0,0xFFFF}},
+    ["state"]={type="List", values={["NoChange"]=0, ["Off"]=1, ["On"]=2}},
+    ["mode"]={type="List", values={["NoChange"]=0, ["Cool"]=1, ["Heat"]=2,["FanOnly"]=3,["Dehumidifier"]=4}},
+    ["temperature"] = {type="Number", range={0,0xFFFF}},
+    ["fanSpeed"]={type="List", values={["NoChange"]=0, ["High"]=1, ["Medium"]=2,["Low"]=3,["Auto"]=4,["UltraLow"]=5,["UltraHigh"]=6,["Off"]=7}},
+    ["keyLock"]={type="List", values={["NoChange"]=0, ["Off"]=1, ["On"]=2}},
+  },
+  FanCoilReplyValues = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    ["state"] = {[0]=Utils.OFF, [1] = Utils.ON},
+    ["mode"] = {[0]="Cool", [1]="Heat", [2]="FanOnly", [3]="Dehumidifier"},
+    ["fanSpeed"]={[0]="NoChange", [1]="High", [2]="Medium",[3]="Low",[4]="Auto",[5]="UltraLow",[6]="UltraHigh",[7]="Off"},
+  },
+  connectedDrivers = {},
+}
+
+function OnRS232MessageRecieved(idBinding, strData)
+  local msg = decodeMessage(strData)
+  if (msg == nil) then 
+    if (Utils.dumpData == Utils.DUMP_DATA_ALL) then
+      print("There is some data in RS232 bus, but not for me:")
+      hexdump(strData)
+    end
+    return
+  end
+  if (Utils.dumpData == Utils.DUMP_DATA_RECIEVED) or (Utils.dumpData == Utils.DUMP_DATA_ALL) then
+    print("Recieved data from RS232 bus:")
+    hexdump(strData)
+  end
+  cmdResponseProcess(idBinding, msg)
+end
+function promptMsg(strMsg)
+  if (strMsg == nil) then return end
+  C4:UpdateProperty("Prompt Message",strMsg)
+end
+
+function makeSendCmdWithAddr(toAddr, srcAddr, strCmdData)
+  return string.char(0xAA, 0x55, tonumber(toAddr), tonumber(srcAddr), #strCmdData) .. strCmdData .. string.char(0x0D, 0x0A)
+end
+function makeSendCmd(strCmdData, canToAll)
+  if (canToAll and DEVICE_CFG.controlAll) then
+    return makeSendCmdWithAddr(0xFF, DEVICE_CFG.srcAddress, strCmdData)
+  else
+    return makeSendCmdWithAddr(DEVICE_CFG.toAddress, DEVICE_CFG.srcAddress, strCmdData)
+  end
+end
+function getFanCoilControlCmd(tParams)
+  local paramRule = DEVICE_CFG.FanCoilControlCmdParamRule
+  local errMsg = Utils.verifyTableParams(paramRule,tParams)
+  if (errMsg ~= nil) then
+    print("Wrong parameter: " .. errMsg)
+    return nil
+  end
+  local setTemp = math.floor(tParams.temperature * 10)
+  local modbusAddr = tParams[CONSTS.PARAM.MODBUS]
+  return string.char(Utils.byte0(modbusAddr),Utils.byte1(modbusAddr),
+            paramRule.state.values[tParams.state],
+            paramRule.mode.values[tParams.mode],
+            Utils.byte0(setTemp),Utils.byte1(setTemp),
+            paramRule.fanSpeed.values[tParams.fanSpeed], 
+            paramRule.keyLock.values[tParams.keyLock])
+end
+
+function decodeMessage(strCmd)
+  local len = #strCmd
+  if (len < 9) then return nil end  -- at least 9 bytes
+  local startCode = Utils.LEtoUShort(string.sub(strCmd,1,2))
+  local endCode = Utils.LEtoUShort(string.sub(strCmd,len-1,len))
+  local dataSize = string.byte(strCmd,5,5)
+  if (startCode ~= 0x55AA) or (endCode ~= 0x0A0D) then return nil end
+  if (len-7) ~= dataSize then return nil end
+  local fromAddr = string.byte(strCmd,4,4)
+  local replyToAddr = string.byte(strCmd,3,3)
+--  if (replyToAddr ~= DEVICE_CFG.srcAddress) then return nil end
+  local result = {[CONSTS.PARAM.SRC_ADDR]=fromAddr, [CONSTS.PARAM.TO_ADDR]=replyToAddr}
+  result.cmdCode = string.byte(strCmd,6,6)
+  result.cmdData = string.sub(strCmd,7,len-2)
+  return result
+end
+
+function cmdResponseProcess(idBinding, msg)
+--  print("TODO: process command response")
+  local cmd = {code=msg.cmdCode, data=msg.cmdData}
+  local cmdHandlers = {
+    [0x07] = handlerReplyDimmerIntensity,
+    [0x92] = {[4]=handlerEventDimmerState,[2]=handlerEventRelayState,[12]=handlerEventDimmerState},
+    [0x06] = handlerReplyRelayState,
+    [0x52] = handlerReplyFanCoil,
+    [0x56] = handlerReplyEnvStatus,
+  }
+  local cmdHandler = cmdHandlers[cmd.code]
+  if (cmdHandler == nil) then return end
+  if (type(cmdHandler) == "function") then
+    cmdHandler(idBinding, msg)
+  elseif (type(cmdHandler) == "table") then
+    cmdHandler = cmdHandler[#(cmd.data)]
+    if (cmdHandler == nil) then return end
+    cmdHandler(idBinding, msg)
+  end
+end
+-- TODO ------------ Dimmer related response handlers ----------------------
+function handlerReplyDimmerIntensity(idBinding, msg)
+  -- 3.1. Read Dimmer IntensityRead
+  local tParams = {[CONSTS.PARAM.SRC_ADDR] = msg[CONSTS.PARAM.SRC_ADDR], [CONSTS.PARAM.TO_ADDR] = msg[CONSTS.PARAM.TO_ADDR]}
+  local connetedDrivers = findConnectedDrivers(CONSTS.DRIVER_TYPE.DIMMER, tParams)
+  if (Utils.isEmpty(connetedDrivers)) then Dbg:Warn("No any dimmer found for " .. Utils.tableToString(tParams)) return end
+  for driverId, driverInfo in pairs(connetedDrivers) do
+    local chnIdx = driverInfo[CONSTS.PARAM.CHN_IDX]
+    local intensity = string.byte(msg.cmdData,chnIdx+2,chnIdx+2)
+    driverInfo["intensity"] = intensity
+    updateDimmerState(driverId, intensity)
+  end
+end
+function handlerEventDimmerState(idBinding, msg)
+  -- 3.2. Dimmer Auto State Send
+  local tParams = {[CONSTS.PARAM.SRC_ADDR] = msg[CONSTS.PARAM.SRC_ADDR], [CONSTS.PARAM.TO_ADDR] = msg[CONSTS.PARAM.TO_ADDR]}
+  local connetedDrivers = findConnectedDrivers(CONSTS.DRIVER_TYPE.DIMMER, tParams)
+  if (Utils.isEmpty(connetedDrivers)) then Dbg:Warn("No any dimmer found for " .. Utils.tableToString(tParams)) return end
+  for driverId, driverInfo in pairs(connetedDrivers) do
+    local chnIdx = driverInfo[CONSTS.PARAM.CHN_IDX]
+    local intensity = string.byte(msg.cmdData,chnIdx,chnIdx)
+    driverInfo["intensity"] = intensity
+    updateDimmerState(driverId, intensity)
+  end
+end
+-- TODO ------------ Relay related response handlers ----------------------
+function _handlerRelayState(msg, bState)
+  local relayStates = {}
+  for i=1,8 do
+    local state = bit.band(bit.rshift(bState, i-1), 1)
+    relayStates[tostring(i)] = (state == 0) and "Off" or "On"
+  end
+  local tParams = {[CONSTS.PARAM.SRC_ADDR] = msg[CONSTS.PARAM.SRC_ADDR], [CONSTS.PARAM.TO_ADDR] = msg[CONSTS.PARAM.TO_ADDR]}
+  local connetedDrivers = findConnectedDrivers(CONSTS.DRIVER_TYPE.RELAY, tParams)
+  if (Utils.isEmpty(connetedDrivers)) then Dbg:Warn("No any relay found for " .. Utils.tableToString(tParams)) return end
+  for driverId, driverInfo in pairs(connetedDrivers) do
+    driverInfo["state"] = relayStates
+    updateRelayState(driverId, relayStates)
+  end
+end
+function handlerReplyRelayState(idBinding, msg)
+  -- 4.1. Read Relay state 
+  local byteState = string.byte(msg.cmdData,3,3)
+  _handlerRelayState(msg, byteState)
+end
+function handlerEventRelayState(idBinding, msg)
+  -- 4.2. Relay Auto State Send 
+  local byteState = string.byte(msg.cmdData,1,1)
+  _handlerRelayState(msg, byteState)
+end
+-- TODO ------------ HVAC related response handlers ----------------------
+function handlerReplyFanCoil(idBinding, msg)
+  -- 5.1. Read Fan Coil
+  local function _handlerBit(data,bitPos, val0, val1)
+    return (bit.band(bit.rshift(data, bitPos), 1) == 0) and val0 or val1
+  end
+  local function _covertFromList(nVal, tList)
+    return tList[nVal]
+  end
+  local data = msg.cmdData
+  local result = {}
+  result[CONSTS.PARAM.MODBUS] = Utils.LEtoUShort(string.sub(data,3,4))
+  
+  result.state = _covertFromList(string.byte(data,5,5),DEVICE_CFG.FanCoilReplyValues["state"])
+  result.mode = _covertFromList(string.byte(data,6,6),DEVICE_CFG.FanCoilReplyValues["mode"])
+  result.fanSpeed = _covertFromList(string.byte(data,7,7),DEVICE_CFG.FanCoilReplyValues["fanSpeed"])
+  if (result.state == nil) or (result.state == nil) or (result.state == nil) then
+    print("Cannot parse fan-coil response: state,mode,fanspeed=", string.byte(data,5,7))
+    return
+  end
+  
+  result.setTemperature = Utils.LEtoUShort(string.sub(data,9,10)) / 10
+  result.roomTemperature = Utils.LEtoUShort(string.sub(data,11,12)) / 10
+  local coilState = Utils.LEtoUShort(string.sub(data,13,14))
+  result.coilCoolOn = _handlerBit(coilState, 0, Utils.OFF, Utils.ON)
+  result.coilHeatOn = _handlerBit(coilState, 1, Utils.OFF, Utils.ON)
+  result.coilFanHighSpeed = _handlerBit(coilState, 2, Utils.OFF, Utils.ON)
+  result.coilFanMidSpeed = _handlerBit(coilState, 3, Utils.OFF, Utils.ON)
+  result.coilFanLowSpeed = _handlerBit(coilState, 4, Utils.OFF, Utils.ON)
+  result.coilKBLockSpeed = _handlerBit(coilState, 5, Utils.OFF, Utils.ON)
+  result.coilMode = _handlerBit(coilState, 6, "Manual", "Auto")
+  
+  local tParams = {
+    [CONSTS.PARAM.SRC_ADDR] = msg[CONSTS.PARAM.SRC_ADDR], 
+    [CONSTS.PARAM.TO_ADDR] = msg[CONSTS.PARAM.TO_ADDR], 
+    [CONSTS.PARAM.MODBUS]=result[CONSTS.PARAM.MODBUS]
+  }
+  local connetedDrivers = findConnectedDrivers(CONSTS.DRIVER_TYPE.HVAC, tParams)
+  if (Utils.isEmpty(connetedDrivers)) then Dbg:Warn("No any HVAC found for " .. Utils.tableToString(tParams)) return end
+  for driverId, driverInfo in pairs(connetedDrivers) do
+    local chnIdx = driverInfo[CONSTS.PARAM.CHN_IDX]
+    driverInfo["state"] = result
+    updateHVACState(driverId, result)
+  end
+end
+-- TODO ------------ Environment related response handlers ----------------------
+function handlerReplyEnvStatus(idBinding, msg)
+  -- 5.4. Reply Environmental Status & Auto Send
+  local data = msg.cmdData
+  local result = {}
+  result[CONSTS.PARAM.MODBUS] = Utils.LEtoUShort(string.sub(data,3,4))
+  result.roomTemperature = Utils.LEtoUShort(string.sub(data,5,6))
+  result.co2PPM = Utils.LEtoUShort(string.sub(data,7,8))
+  result.pm2d5 = Utils.LEtoUShort(string.sub(data,9,10))
+  result.humidity = string.byte(data,11,11)
+  local tParams = {
+    [CONSTS.PARAM.SRC_ADDR] = msg[CONSTS.PARAM.SRC_ADDR], 
+    [CONSTS.PARAM.TO_ADDR] = msg[CONSTS.PARAM.TO_ADDR], 
+    [CONSTS.PARAM.MODBUS]=result[CONSTS.PARAM.MODBUS]
+  }
+  local connetedDrivers = findConnectedDrivers(CONSTS.DRIVER_TYPE.ENV, tParams)
+  if (Utils.isEmpty(connetedDrivers)) then Dbg:Warn("No any Environmental driver found for " .. Utils.tableToString(tParams)) return end
+  for driverId, driverInfo in pairs(connetedDrivers) do
+    local chnIdx = driverInfo[CONSTS.PARAM.CHN_IDX]
+    driverInfo["state"] = result
+    updateEnvState(driverId, result)
+  end
+end
+
+function updateDimmerState(driverIdx, intensity)
+  if (Utils.dumpData == Utils.DUMP_DATA_ALL) or (Utils.dumpData == Utils.DUMP_DATA_RECIEVED) then
+    print("updateDimmerState("..driverIdx..") with intensity=" .. intensity)
+  end
+  C4:SendToDevice(driverIdx,"updateDimmerIntensity",{intensity=intensity})
+end
+function updateRelayState(driverIdx, tStates)
+  if (Utils.dumpData == Utils.DUMP_DATA_ALL) or (Utils.dumpData == Utils.DUMP_DATA_RECIEVED) then
+    print("updateRelayState("..driverIdx..") with " .. Utils.tableToString(tStates))
+  end
+  C4:SendToDevice(driverIdx,"updateRelayState",tStates)
+end
+function updateHVACState(driverIdx, data)
+  if (Utils.dumpData == Utils.DUMP_DATA_ALL) or (Utils.dumpData == Utils.DUMP_DATA_RECIEVED) then
+    print("updateHVACState("..driverIdx..") with " .. Utils.tableToString(data))
+  end
+  
+  local tParams = {
+    mode = data.mode,
+    fanSpeed = data.fanSpeed,
+    setTemperature = data.setTemperature,
+    roomTemperature = data.roomTemperature,
+    bottonLock = data.coilKBLockSpeed,
+  }
+  if (data.state == Utils.OFF) then
+    tParams.mode = "Off"
+  end
+  C4:SendToDevice(driverIdx,"UpdateHVAC",tParams)
+end
+function updateEnvState(driverIdx, data)
+  if (Utils.dumpData == Utils.DUMP_DATA_ALL) or (Utils.dumpData == Utils.DUMP_DATA_RECIEVED) then
+    print("updateEnvState("..driverIdx..") with " .. Utils.tableToString(data))
+  end
+  C4:SendToDevice(driverIdx,"UpdateEnvironmentStatus",data)
+end
+
+-- TODO ----------------------- Command construction -------------------------
+cmdMaker = {
+   commandCode = nil,
+   commandParams = nil,
+   -------------------------- Scene related command -------------------------
+   cmdActivateScene= {
+      command = function(tParams)
+          local strCmd = string.char(0x12, Utils.byte0(tParams.sceneNumber),Utils.byte1(tParams.sceneNumber))
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   cmdIncScene= {
+      command = function(tParams)
+          local strCmd = string.char(0x13, Utils.byte0(tParams.sceneNumber),Utils.byte1(tParams.sceneNumber))
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   cmdDecScene= {
+      command = function(tParams)
+          local strCmd = string.char(0x14, Utils.byte0(tParams.sceneNumber),Utils.byte1(tParams.sceneNumber))
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   cmdStopFadeScene= {
+      command = function(tParams)
+          local strCmd = string.char(0x12, Utils.byte0(61440),Utils.byte1(61440))
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   cmdSaveStateAsScene= {
+      command = function(tParams)
+          local options = {["Save"]=0, ["Trigger"]=1, ["Delete"]=2}
+          if (options[tParams.option] == nil) then
+            print("cmdSaveStateAsScene(): can only support action Save/Trigger/Delete")
+            return
+          end
+          local strCmd = string.char(0x0D, Utils.byte0(tParams.sceneNumber),Utils.byte1(tParams.sceneNumber), options[tParams.option], tParams.areaNo)
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   -------------------------- Dimmer related command -------------------------
+   cmdReadDimmerIntensity= {
+      command = function(tParams)
+          local strCmd = string.char(0x07, Utils.byte0(DEVICE_CFG.protocolVersion),Utils.byte1(DEVICE_CFG.protocolVersion))
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   cmdDimmerDirectControl= {
+      command = function(tParams)
+          local actions = {["StopFade"]=0, ["Inc"]=1, ["Dec"]=2,["AbsoluteLevel"]=3}
+          if (actions[tParams.action] == nil) then
+            print("cmdDimmerDirectControl(): can only support action StopFade/Inc/Dec/AbsoluteLevel")
+            return
+          end
+          local strCmd = string.char(0x1C, actions[tParams.action], tParams[CONSTS.PARAM.CHN_IDX], tParams.adjustment, tParams.secondsToFade)
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   -------------------------- Relay related command -------------------------
+   cmdReadRelayState= {
+      command = function(tParams)
+          local strCmd = string.char(0x06, Utils.byte0(DEVICE_CFG.protocolVersion),Utils.byte1(DEVICE_CFG.protocolVersion))
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   cmdRelayDirectControl= {
+      command = function(tParams)
+          local actions = {["On"]=0x19, ["Off"]=0x1E}
+          if (actions[tParams.action] == nil) then
+            print("cmdRelayDirectControl(): can only support action On/Off")
+            return
+          end
+          local strCmd = string.char(actions[tParams.action], tParams.relayOnOff, tParams.relayMask)
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   cmdRelayNewDirectControl= {
+      command = function(tParams)
+          local actions = {["Toggle"]=1, ["DirectControl"]=3}
+          local onOffFlags = {[Utils.OFF]=0, [Utils.ON]=1}
+          local strCmd = string.char(0x1C,actions[tParams.action], tParams[CONSTS.PARAM.CHN_IDX],  onOffFlags[tParams.onOffFlag], 0)
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   -------------------------- HVAC related command -------------------------
+   cmdReadFanCoil= {
+      command = function(tParams)
+          local modbusAddr = tParams[CONSTS.PARAM.MODBUS]
+          local strCmd = string.char(0x52, 
+              Utils.byte0(DEVICE_CFG.protocolVersion),Utils.byte1(DEVICE_CFG.protocolVersion),
+              Utils.byte0(modbusAddr),Utils.byte1(modbusAddr))
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   cmdFanCoilDirectControl= {
+      command = function(tParams)
+          local fanCDCStr = getFanCoilControlCmd(tParams)
+          if (fanCDCStr == nil) then return nil end
+          local strCmd = string.char(0x50, 
+              Utils.byte0(DEVICE_CFG.protocolVersion),Utils.byte1(DEVICE_CFG.protocolVersion)) .. fanCDCStr
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+   cmdReadEnvironmentalStatus= {
+      command = function(tParams)
+          local modbusAddr = tParams[CONSTS.PARAM.MODBUS]
+          local strCmd = string.char(0x56, 
+              Utils.byte0(DEVICE_CFG.protocolVersion),Utils.byte1(DEVICE_CFG.protocolVersion),
+              Utils.byte0(modbusAddr),Utils.byte1(modbusAddr))
+          return makeSendCmdWithAddr(tParams[CONSTS.PARAM.TO_ADDR], tParams[CONSTS.PARAM.SRC_ADDR], strCmd)
+        end,
+      responseHandler = cmdResponseProcess
+   },
+}
+
+function sendOneCommand(cmdName, tParams)
+  local cmdHandler = cmdMaker[cmdName]
+  if (cmdHandler == nil) then
+    print("Error: no command " .. cmdName .. " defined")
+    return
+  end
+  local strCmd = cmdHandler.command(tParams)
+  C4:SendToSerial(DEVICE_CFG.CONNECTION_RS232,strCmd)
+  if (Utils.dumpData == Utils.DUMP_DATA_ALL) then
+    print("Send data to RS232:")
+    hexdump(strCmd)
+  end
+end
+----------- C4 dirver COMMAND interfaces ----------
+-- TODO ----- Scene related -----
+function activateScene(tParams)
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SCENE] = {type="Number", range={2,0xFFFF}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"activateScene\": " .. errMsg)
+    return
+  end
+  _refershDriverConn(CONSTS.DRIVER_TYPE.SCENE, tParams)
+  sendOneCommand("cmdActivateScene", tParams)
+end
+function EX_CMD.activateScene(tParams) activateScene(tParams) end
+function PRX_CMD.activateScene(idBinding, tParams) activateScene(tParams) end
+-- incScene(tParams) 
+function incScene(tParams) 
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SCENE] = {type="Number", range={2,0xFFFF}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"incScene\": " .. errMsg)
+    return
+  end 
+  sendOneCommand("cmdIncScene", tParams)
+end
+function EX_CMD.incScene(tParams) incScene(tParams) end
+function PRX_CMD.incScene(idBinding, tParams) incScene(tParams) end
+-- decScene(tParams) 
+function decScene(tParams) 
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SCENE] = {type="Number", range={2,0xFFFF}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"decScene\": " .. errMsg)
+    return
+  end
+  _refershDriverConn(CONSTS.DRIVER_TYPE.SCENE, tParams)
+  sendOneCommand("cmdDecScene", tParams)
+end
+function EX_CMD.decScene(tParams) decScene(tParams) end
+function PRX_CMD.decScene(idBinding, tParams) decScene(tParams) end
+-- stopFadeScene(tParams)
+function stopFadeScene(tParams)
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"stopFadeScene\": " .. errMsg)
+    return
+  end 
+  _refershDriverConn(CONSTS.DRIVER_TYPE.SCENE, tParams)
+  sendOneCommand("cmdStopFadeScene", tParams)
+end
+function EX_CMD.stopFadeScene(tParams) stopFadeScene(tParams) end
+function PRX_CMD.stopFadeScene(idBinding, tParams) stopFadeScene(tParams) end
+--saveStateAsScene(tParams) 
+function saveStateAsScene(tParams) 
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SCENE] = {type="Number", range={0,0xFFFF}},
+    ["option"]={type="List", values={["Save"]=0, ["Trigger"]=1, ["Delete"]=2}},
+    ["areaNo"] = {type="Number", range={0,0xFF}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"saveStateAsScene\": " .. errMsg)
+    return
+  end
+  _refershDriverConn(CONSTS.DRIVER_TYPE.SCENE, tParams)
+  sendOneCommand("cmdSaveStateAsScene", tParams)
+end
+function EX_CMD.saveStateAsScene(tParams)  saveStateAsScene(tParams)  end
+function PRX_CMD.saveStateAsScene(idBinding, tParams) saveStateAsScene(tParams) end
+
+-- TODO ---- Dimmer related -----
+--readDimmerIntensity(tParams)
+function readDimmerIntensity(tParams)
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"readDimmerIntensity\": " .. errMsg)
+    return
+  end
+  _refershDriverConn(CONSTS.DRIVER_TYPE.DIMMER, tParams)
+  sendOneCommand("cmdReadDimmerIntensity", tParams)
+end
+function EX_CMD.readDimmerIntensity(tParams) readDimmerIntensity(tParams) end
+function PRX_CMD.readDimmerIntensity(idBinding, tParams) readDimmerIntensity(tParams) end
+-- dimmerDirectControl(tParams) 
+function dimmerDirectControl(tParams) 
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    ["action"]={type="List", values={["StopFade"]=0, ["Inc"]=1, ["Dec"]=2,["AbsoluteLevel"]=3}},
+    [CONSTS.PARAM.CHN_IDX] = {type="Number", range={1,12}},
+    ["adjustment"] = {type="Number", range={0,255}},
+    ["secondsToFade"] = {type="Number", range={0,255}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"dimmerDirectControl\": " .. errMsg)
+    return
+  end
+  _refershDriverConn(CONSTS.DRIVER_TYPE.DIMMER, tParams)
+  sendOneCommand("cmdDimmerDirectControl", tParams)
+end
+function EX_CMD.dimmerDirectControl(tParams) dimmerDirectControl(tParams) end
+function PRX_CMD.dimmerDirectControl(idBinding, tParams) dimmerDirectControl(tParams) end
+-- TODO ----- relay related -----   
+function readRelayState(tParams) 
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"readDimmerIntensity\": " .. errMsg)
+    return
+  end
+  _refershDriverConn(CONSTS.DRIVER_TYPE.RELAY, tParams)
+  sendOneCommand("cmdReadRelayState", tParams)
+end
+function EX_CMD.readRelayState(tParams) readRelayState(tParams) end
+function PRX_CMD.readRelayState(idBinding, tParams) readRelayState(tParams) end
+--relayDirectControl(tParams)
+function relayDirectControl(tParams) 
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    ["action"]={type="List", values={["On"]=0x19, ["Off"]=0x1E}},
+    ["relayOnOff"] = {type="Number", range={0,255}},
+    ["relayMask"] = {type="Number", range={0,255}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"relayDirectControl\": " .. errMsg)
+    return
+  end
+  _refershDriverConn(CONSTS.DRIVER_TYPE.RELAY, tParams)
+  sendOneCommand("cmdRelayDirectControl", tParams)
+end
+function EX_CMD.relayDirectControl(tParams) relayDirectControl(tParams) end
+function PRX_CMD.relayDirectControl(idBinding, tParams) relayDirectControl(tParams) end
+--relayNewDirectControl
+function relayNewDirectControl(tParams) 
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    ["action"]={type="List", values={["Toggle"]=1, ["DirectControl"]=3}},
+    [CONSTS.PARAM.CHN_IDX] = {type="Number", range={1,8}},
+    ["onOffFlag"] = {type="List", values={[Utils.OFF]=0, [Utils.ON]=1}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"relayNewDirectControl\": " .. errMsg)
+    return
+  end
+  _refershDriverConn(CONSTS.DRIVER_TYPE.RELAY, tParams)
+  sendOneCommand("cmdRelayNewDirectControl", tParams)
+end  
+function EX_CMD.relayNewDirectControl(tParams) relayNewDirectControl(tParams) end
+function PRX_CMD.relayNewDirectControl(idBinding, tParams) relayNewDirectControl(tParams) end
+-- TODO ----- HVAC related -----
+function readFanCoil(tParams) 
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.MODBUS] = {type="Number", range={0, 0xFFFF}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"readFanCoil\": " .. errMsg)
+    return
+  end
+
+  _refershDriverConn(CONSTS.DRIVER_TYPE.HVAC, tParams)
+  sendOneCommand("cmdReadFanCoil", tParams)
+end
+function EX_CMD.readFanCoil(tParams) readFanCoil(tParams) end
+function PRX_CMD.readFanCoil(idBinding, tParams) readFanCoil(tParams) end
+--fanCoilDirectControl(tParams) 
+function fanCoilDirectControl(tParams) 
+  local cmdParamsRule = DEVICE_CFG.FanCoilControlCmdParamRule
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"fanCoilDirectControl\": " .. errMsg)
+    return
+  end
+  _refershDriverConn(CONSTS.DRIVER_TYPE.HVAC, tParams)
+  sendOneCommand("cmdFanCoilDirectControl", tParams)
+end
+function EX_CMD.fanCoilDirectControl(tParams) fanCoilDirectControl(tParams) end
+function PRX_CMD.fanCoilDirectControl(idBinding, tParams) fanCoilDirectControl(tParams) end
+-- TODO ----- Environment status related -----
+function readEnvironmentalStatus(tParams) 
+  local cmdParamsRule = {
+    [CONSTS.PARAM.TO_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.SRC_ADDR] = {type="Number", range={0,0xFF}},
+    [CONSTS.PARAM.MODBUS] = {type="Number", range={0,0xFFFF}},
+  }
+  local errMsg = Utils.verifyTableParams(cmdParamsRule, tParams)
+  if (errMsg ~= nil) then
+    Dbg:Error("Error execute command \"readEnvironmentalStatus\": " .. errMsg)
+    return
+  end
+  _refershDriverConn(CONSTS.DRIVER_TYPE.ENV, tParams)
+  sendOneCommand("cmdReadEnvironmentalStatus", tParams)
+end
+function EX_CMD.readEnvironmentalStatus(tParams) readEnvironmentalStatus(tParams) end
+function PRX_CMD.readEnvironmentalStatus(idBinding, tParams) readEnvironmentalStatus(tParams) end
+
+----------------------------- Lua Actions --------------------------------
+function LUA_ACTION.showDeviceStatus()
+  local dvcs = DEVICE_CFG.connectedDrivers
+  for dvcType,data in pairs(dvcs) do
+    if (not Utils.isEmpty(data)) then
+      print(dvcType)
+      for dvcId,drvInfo in pairs(data) do
+        local strData = Utils.tableToString(drvInfo)
+        print("", strData)
+      end
+    end
+  end
+end
+
+------------------------- Connect to other drivers -----------------------
+function copyParams(tFrom, toTo, tParamNames)
+  for i,name in pairs(tParamNames) do
+    toTo[name] = (tonumber(tFrom[name]) or tFrom[name]) or toTo[name]
+  end
+end
+function _resetConnectedDrivers()
+  DEVICE_CFG.connectedDrivers = {}
+end
+-- TODO ---------------------Driver Connection related --------------------
+--connect parameters:
+--  driverType = CONSTS.DRIVER_TYPE.xxx
+--  srcAddress = 0~255
+--  toAddress = 0~255
+--  LIGHT:channelIndex = 1~12; SCENE:none, HVAC:modbusAddr, ENV:modbusAddr, RELAY:channelIndex
+--  driverId = 1~65535
+function _connectDriver(tParams)
+  Dbg:Info("Connect driver " .. Utils.tableToString(tParams))
+  local deviceType = tParams[CONSTS.PARAM.DRV_TYPE]
+  _refershDriverConn(deviceType, tParams)
+end
+function _refershDriverConn(deviceType, tParams)
+  if (DEVICE_CFG.connectedDrivers[deviceType] == nil) then DEVICE_CFG.connectedDrivers[deviceType] = {} end
+  local curTypeDrivers = DEVICE_CFG.connectedDrivers[deviceType]
+  local driverId = tParams[CONSTS.PARAM.DRV_ID]
+  if (curTypeDrivers[driverId] == nil) then curTypeDrivers[driverId] = {} end
+  local curDriver = curTypeDrivers[driverId]
+  curDriver[CONSTS.PARAM.DRV_TYPE] = deviceType
+  local caredAttrs = {CONSTS.PARAM.DRV_TYPE, CONSTS.PARAM.SRC_ADDR, CONSTS.PARAM.TO_ADDR, CONSTS.PARAM.DRV_ID, CONSTS.PARAM.MODBUS}
+  if (deviceType == CONSTS.DRIVER_TYPE.DIMMER) then table.insert(caredAttrs,CONSTS.PARAM.CHN_IDX) end
+  copyParams(tParams, curDriver, caredAttrs)
+end
+function findConnectedDrivers(deviceType, tParams)
+  local curTypeDrivers = DEVICE_CFG.connectedDrivers[deviceType]
+  if (curTypeDrivers == nil) then return {} end
+  local result = {}
+  for driverId,driverInfo in pairs(curTypeDrivers) do
+    if (isMatchedDriver(deviceType, tParams, driverInfo)) then
+      result[driverId] = driverInfo
+    end
+  end
+  return result
+end
+function matchAddress(deviceType, tParams, driverInfo)
+  if (tParams[CONSTS.PARAM.SRC_ADDR] ~= driverInfo[CONSTS.PARAM.TO_ADDR]) then return false end
+  if (deviceType == CONSTS.DRIVER_TYPE.ENV) then
+    if (tParams[CONSTS.PARAM.TO_ADDR] ~= driverInfo[CONSTS.PARAM.SRC_ADDR]) and (tParams[CONSTS.PARAM.TO_ADDR] ~= 0xFF) then return false end
+  else
+    if (tParams[CONSTS.PARAM.TO_ADDR] ~= driverInfo[CONSTS.PARAM.SRC_ADDR]) then return false end
+  end
+  return true
+end
+local matchFunctions = {
+  [CONSTS.DRIVER_TYPE.DIMMER] = function(tParams, driverInfo)
+        return true
+      end,
+  [CONSTS.DRIVER_TYPE.ENV] = function(tParams, driverInfo)
+        return tParams[CONSTS.PARAM.MODBUS] == driverInfo[CONSTS.PARAM.MODBUS]
+      end,
+  [CONSTS.DRIVER_TYPE.HVAC] = function(tParams, driverInfo)
+        return tParams[CONSTS.PARAM.MODBUS] == driverInfo[CONSTS.PARAM.MODBUS]
+      end,
+  [CONSTS.DRIVER_TYPE.RELAY] = function(tParams, driverInfo)
+        return true
+      end,
+  [CONSTS.DRIVER_TYPE.SCENE] = function(tParams, driverInfo)
+        return true
+      end,
+}
+function isMatchedDriver(deviceType, tParams, driverInfo)
+  if (matchAddress(deviceType, tParams, driverInfo)) then
+    local matchFunc = matchFunctions[deviceType]
+    if (matchFunc == nil) then return false end
+    return matchFunc(tParams, driverInfo)
+  else
+    return false
+  end
+end
+function OnBindingChanged(idBinding, strClass, bIsBound)
+  if (not bIsBound) or (bIsBound == "false") then return end
+  C4:SendToDevice(tonumber(idBinding),"GetDriverInfo",{deviceId=C4:GetDeviceID()})
+end
+function _refreshDriverConnections()
+  _resetConnectedDrivers()
+  -- refresh TRANSNET_PORT connections
+  local devs = C4:GetBoundConsumerDevices(0, DEVICE_CFG.CONNECTION_TRANSNET)
+  for id,name in pairs(devs) do
+    C4:SendToDevice(id,"GetDriverInfo",{deviceId=C4:GetDeviceID()})
+  end
+end
+function EX_CMD.connectDriver(tParams)
+  _connectDriver(tParams)
+end
+function ON_DRIVER_LATEINIT.transnetConnection()
+  _refreshDriverConnections()
+end
+function LUA_ACTION.refreshConnections()
+  _refreshDriverConnections()
+end
+
+------------------------ initial driver ----------------------
+--function DriverPollingTask()
+--  sendOneCommand("cmdReadRelayState", {})
+--end
+function ReceivedFromSerial(idBinding, strData)
+  RS232Handler:onPieceRecieved(idBinding,strData)
+end
+--function OnPropertyChanged4DriverExt(propName, propValue)
+--  Utils.handleDriverPropertyChange(DEVICE_CFG.properties, propName, propValue)
+--end
+function OnTimer4DriverExt(idTimer)
+  RS232Handler:onTimer(idTimer)
+end
+function ON_DRIVER_INIT.Transnet()
+  C4:AddVariable("EventCount", 0, "NUMBER")
+  RS232Handler:init({callBack=OnRS232MessageRecieved})
+end
+
+------------------------some method for debugging --------------
+function LUA_ACTION.triggerEvent()
+-- This is used for debugging purpose. Ignore it in product
+  DEVICE_CFG.eventCnt = DEVICE_CFG.eventCnt + 1
+  local newVal = DEVICE_CFG.eventCnt
+  C4:SetVariable("EventCount", newVal)
+end
+function DebugSendCmd(strData)
+  local len = #(tohex(strData))
+  local cmd = string.format("AA 55 %02X %02X %02X %s 0D 0A",DEVICE_CFG.toAddress, DEVICE_CFG.srcAddress, len, strData)
+  print("Will send this to RS232: " .. cmd)
+  C4:SendToSerial(DEVICE_CFG.CONNECTION_RS232, tohex(cmd))
+end
+function DebugSendRS232(strData)
+  C4:SendToSerial(DEVICE_CFG.CONNECTION_RS232, tohex(strData))
+end
+function DebugRecieveRS232(strData)
+  OnRS232MessageRecieved(DEVICE_CFG.CONNECTION_RS232, tohex(strData))
+end
+-- -- Dimmer auto-report
+--DebugSendRS232("00 E1 0C 01 AA 55 00 02 05 92 10 20 30 40 0D 0A FF DD")
+-- -- Dimmer read-response
+--DebugSendRS232("00 E2 0F 01 AA 55 00 02 07 07 64 00 14 20 30 40 0D 0A FF DD")
+--C4:SendToProxy(3,"STATE_OPENED",0, "NOTIFY")
+
+
+
+]]></script>
+        <actions>
+            <action>
+                <name>triggerEvent</name>
+                <command>triggerEvent</command>
+            </action>
+            <action>
+                <name>Show Device Status</name>
+                <command>showDeviceStatus</command>
+            </action>
+            <action>
+                <name>Refresh Connections</name>
+                <command>refreshConnections</command>
+            </action>
+            <action>
+                <name>Display Globals</name>
+                <command>DisplayGlobals</command>
+            </action>
+        </actions>
+        <commands>
+            <command>
+                <name>activateScene</name>
+                <description>Activate Scene in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>sceneNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>2</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>incScene</name>
+                <description>Increase Scene Level in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>sceneNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>2</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>decScene</name>
+                <description>Decrease Scene Level inc/dec in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>sceneNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>2</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>stopFadeScene</name>
+                <description>Stop Scene Level in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>saveStateAsScene</name>
+                <description>Save State as Scene in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>modbusAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                    <param>
+                        <name>option</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Save</item>
+                            <item>Trigger</item>
+                            <item>Delete</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>areaNo</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>readDimmerIntensity</name>
+                <description>read Dimmer Intensity in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>dimmerDirectControl</name>
+                <description>dimmer Direct Control in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>action</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>StopFade</item>
+                            <item>Inc</item>
+                            <item>Dec</item>
+                            <item>AbsoluteLevel</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>channelIndex</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>12</maximum>
+                    </param>
+                    <param>
+                        <name>adjustment</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>secondsToFade</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>readRelayState</name>
+                <description>read Relay State in NAME</description>
+            </command>
+            <command>
+                <name>relayDirectControl</name>
+                <description>batch Relay Direct Control in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>action</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>On</item>
+                            <item>Off</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>relayOnOff</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>relayMask</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>relayNewDirectControl</name>
+                <description>single Relay direct control in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>action</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Toggle</item>
+                            <item>DirectControl</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>channelIndex</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>8</maximum>
+                    </param>
+                    <param>
+                        <name>onOffFlag</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>On</item>
+                            <item>Off</item>
+                        </items>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>readFanCoil</name>
+                <description>Read Fan Coil in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>modbusAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>fanCoilDirectControl</name>
+                <description>fan Coil Direct Control in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>modbusAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                    <param>
+                        <name>state</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>NoChange</item>
+                            <item>Off</item>
+                            <item>On</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>mode</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>NoChange</item>
+                            <item>Cool</item>
+                            <item>Heat</item>
+                            <item>FanOnly</item>
+                            <item>Dehumidifier</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>temperature</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                    <param>
+                        <name>fanSpeed</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>NoChange</item>
+                            <item>High</item>
+                            <item>Medium</item>
+                            <item>Low</item>
+                            <item>Auto</item>
+                            <item>UltraLow</item>
+                            <item>UltraHigh</item>
+                            <item>Off</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>keyLock</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Off</item>
+                            <item>On</item>
+                        </items>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>readEnvironmentalStatus</name>
+                <description>read Environmental Status in NAME</description>
+                <params>
+                    <param>
+                        <name>srcAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>toAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>modbusAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+        </commands>
+        <properties>
+            <property>
+                <name>Debug Level</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>2 - Warning</default>
+                <items>
+                    <item>0 - Alert</item>
+                    <item>1 - Error</item>
+                    <item>2 - Warning</item>
+                    <item>3 - Info</item>
+                    <item>4 - Trace</item>
+                    <item>5 - Debug</item>
+                </items>
+            </property>
+            <property>
+                <name>Debug Mode</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>Off</default>
+                <items>
+                    <item>Off</item>
+                    <item>Print</item>
+                    <item>Log</item>
+                    <item>Print and Log</item>
+                </items>
+            </property>
+            <property>
+                <name>Dump Data</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>No</default>
+                <items>
+                    <item>No</item>
+                    <item>All</item>
+                    <item>Recieved</item>
+                </items>
+            </property>
+            <property>
+                <name>Prompt Message</name>
+                <type>STRING</type>
+                <readonly>true</readonly>
+                <default />
+            </property>
+        </properties>
+    </config>
+    <composer_categories>
+        <category>Unknown</category>
+    </composer_categories>
+</devicedata>

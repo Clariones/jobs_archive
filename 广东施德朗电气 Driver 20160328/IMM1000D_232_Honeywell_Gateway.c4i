@@ -1,0 +1,1908 @@
+<devicedata>
+    <copyright>Copyright 2014 Control4 Corporation.  All rights reserved.</copyright>
+    <creator>SkyNet</creator>
+    <manufacturer>Honeywell</manufacturer>
+    <name>Honeywell IMM1000D Gateway</name>
+    <model>IMM1000D Gateway</model>
+    <created>03/19/2016 10:36 AM</created>
+    <modified>03/24/2016 5:19 PM</modified>
+    <version>1</version>
+    <small>devices_sm\c4.gif</small>
+    <large>devices_lg\c4.gif</large>
+    <control>lua_gen</control>
+    <controlmethod>serial</controlmethod>
+    <driver>DriverWorks</driver>
+    <search_type>SkyNet</search_type>
+    <templatedescription>Base Template, used in all templates.</templatedescription>
+    <combo>True</combo>
+    <OnlineCategory>others</OnlineCategory>
+    <proxies qty="1">
+        <proxy>IMM1000D_232_Honeywell_Gateway</proxy>
+    </proxies>
+    <connections>
+        <connection>
+            <id>1</id>
+            <facing>1</facing>
+            <connectionname>RS232</connectionname>
+            <type>1</type>
+            <consumer>True</consumer>
+            <audiosource>False</audiosource>
+            <videosource>False</videosource>
+            <linelevel>True</linelevel>
+            <classes>
+                <class>
+                    <classname>RS_232</classname>
+                </class>
+            </classes>
+        </connection>
+        <connection>
+            <id>2</id>
+            <facing>1</facing>
+            <connectionname>IMM1000D PORT</connectionname>
+            <type>1</type>
+            <consumer>False</consumer>
+            <audiosource>False</audiosource>
+            <videosource>False</videosource>
+            <linelevel>False</linelevel>
+            <classes>
+                <class>
+                    <classname>IMM1000D_PORT</classname>
+                </class>
+            </classes>
+        </connection>
+    </connections>
+    <config>
+        <identify_text>Honeywell IMM1000D Gateway</identify_text>
+        <power_management_method>AlwaysOn</power_management_method>
+        <power_command_delay>0</power_command_delay>
+        <power_delay>0</power_delay>
+        <power_command_needed>False</power_command_needed>
+        <serialsettings>9600 8 none 1 none 232</serialsettings>
+        <documentation>
+        </documentation>
+        <script><![CDATA[
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+-- Driver Declarations
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+--[[
+  Command Handler Tables
+--]]
+EX_CMD = {}
+PRX_CMD = {}
+NOTIFY = {}
+DEV_MSG = {}
+LUA_ACTION = {}
+
+--[[
+Tables of functions
+The following tables are function containers that are called within the following functions:  
+
+  OnDriverInit()
+    - first calls all functions contained within ON_DRIVER_EARLY_INIT table
+    - then calls all functions contained within ON_DRIVER_INIT table
+  OnDriverLateInit()
+    - calls all functions contained within ON_DRIVER_LATEINIT table
+  OnDriverUpdate()
+    - calls all functions contained within ON_DRIVER_UPDATE table
+  OnDriverDestroyed()
+    - calls all functions contained within ON_DRIVER_DESTROYED table
+  OnPropertyChanged()
+    - calls all functions contained within ON_PROPERTY_CHANGED table
+--]]
+ON_DRIVER_INIT = {}
+ON_DRIVER_EARLY_INIT = {}
+ON_DRIVER_LATEINIT = {}
+ON_DRIVER_UPDATE = {}
+ON_DRIVER_DESTROYED = {}
+ON_PROPERTY_CHANGED = {}
+
+-- Constants
+DEFAULT_PROXY_BINDINGID = 5001
+    
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+-- Common Driver Code
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+--[[
+  OnPropertyChanged
+    Function called by Director when a property changes value.
+  Parameters
+    sProperty
+      Name of property that has changed.
+  Remarks
+    The value of the property that has changed can be found with: Properties[sName]. Note
+    that OnPropertyChanged is not called when the Property has been changed by the driver
+    calling the UpdateProperty command, only when the Property is changed by the user from
+    the Properties Page. This function is called by Director when a property changes value.
+--]]
+function OnPropertyChanged(sProperty)
+  Dbg:Trace("OnPropertyChanged(" .. sProperty .. ") changed to: " .. Properties[sProperty])
+
+  local propertyValue = Properties[sProperty]
+  
+  -- Remove any spaces (trim the property)
+  local trimmedProperty = string.gsub(sProperty, " ", "")
+
+  -- if function exists then execute (non-stripped)
+  if (ON_PROPERTY_CHANGED[sProperty] ~= nil and type(ON_PROPERTY_CHANGED[sProperty]) == "function") then
+    ON_PROPERTY_CHANGED[sProperty](propertyValue)
+    return
+  -- elseif trimmed function exists then execute
+  elseif (ON_PROPERTY_CHANGED[trimmedProperty] ~= nil and type(ON_PROPERTY_CHANGED[trimmedProperty]) == "function") then
+    ON_PROPERTY_CHANGED[trimmedProperty](propertyValue)
+    return
+  end
+  
+  Utils.onPropertyChanged(sProperty, propertyValue)
+  if (type(OnPropertyChanged4DriverExt) == "function") then
+    OnPropertyChanged4DriverExt(sProperty, propertyValue)
+  end
+end
+
+function ON_PROPERTY_CHANGED.DebugMode(propertyValue)
+  gDebugTimer:KillTimer()
+  Dbg:OutputPrint(propertyValue:find("Print") ~= nil)
+  Dbg:OutputC4Log(propertyValue:find("Log") ~= nil)
+  if (propertyValue == "Off") then return end
+  gDebugTimer:StartTimer()
+end
+
+function ON_PROPERTY_CHANGED.DebugLevel(propertyValue)
+  Dbg:SetLogLevel(tonumber(string.sub(propertyValue, 1, 1)))
+end
+
+---------------------------------------------------------------------
+-- ExecuteCommand Code
+---------------------------------------------------------------------
+--[[
+  ExecuteCommand
+    Function called by Director when a command is received for this DriverWorks driver.
+    This includes commands created in Composer programming.
+  Parameters
+    sCommand
+      Command to be sent
+    tParams
+      Lua table of parameters for the sent command
+--]]
+function ExecuteCommand(sCommand, tParams)
+  Dbg:Trace("ExecuteCommand(" .. sCommand .. "): " .. Utils.tableToString(tParams))
+
+  -- Remove any spaces (trim the command)
+  local trimmedCommand = string.gsub(sCommand, " ", "")
+
+  -- if function exists then execute (non-stripped)
+  if (EX_CMD[sCommand] ~= nil and type(EX_CMD[sCommand]) == "function") then
+    EX_CMD[sCommand](tParams)
+  -- elseif trimmed function exists then execute
+  elseif (EX_CMD[trimmedCommand] ~= nil and type(EX_CMD[trimmedCommand]) == "function") then
+    EX_CMD[trimmedCommand](tParams)
+  -- handle the command
+  elseif (EX_CMD[sCommand] ~= nil) then
+    QueueCommand(EX_CMD[sCommand])
+  else
+    Dbg:Alert("ExecuteCommand: Unhandled command = " .. sCommand)
+  end
+end
+
+--[[
+  Define any functions of commands (EX_CMD.<command>) received from ExecuteCommand that need to be handled by the driver.
+--]]
+
+--[[
+  EX_CMD.LUA_ACTION
+    Function called for any actions executed by the user from the Actions Tab in Composer.
+--]]
+function EX_CMD.LUA_ACTION(tParams)
+  if tParams ~= nil then
+    for cmd,cmdv in pairs(tParams) do
+      if cmd == "ACTION" then
+        if (LUA_ACTION[cmdv] ~= nil) then
+          LUA_ACTION[cmdv]()
+        else
+          Dbg:Alert("Undefined Action")
+          Dbg:Alert("Key: " .. cmd .. " Value: " .. cmdv)
+        end
+      else
+        Dbg:Alert("Undefined Command")
+        Dbg:Alert("Key: " .. cmd .. " Value: " .. cmdv)
+      end
+    end
+  end
+end
+
+--[[
+  LUA_ACTION.DisplayGlobals
+    Implementation of Action "Display Globals". Executed when selecting the "Display Globals" action within Composer.
+    Provided as an example for actions.
+--]]
+function LUA_ACTION.DisplayGlobals()
+  print ("Global Variables")
+  print ("----------------------------")
+
+  for k,v in pairs(_G) do -- globals`
+    if not (type(v) == "function") then
+      --print(k .. ":  " .. tostring(v))
+      if (string.find(k, "^g%L")  == 1) then
+        print(k .. ":  " .. tostring(v))
+        if (type(v) == "table") then
+          PrintTable(v, "   ")
+        end
+      end
+    end
+  end
+
+  print ("")
+end
+
+function PrintTable(tValue, sIndent)
+  sIndent = sIndent or "   "
+  for k,v in pairs(tValue) do
+    print(sIndent .. tostring(k) .. ":  " .. tostring(v))
+    if (type(v) == "table") then
+      PrintTable(v, sIndent .. "   ")
+    end
+  end
+end
+
+---------------------------------------------------------------------
+-- ReceivedFromProxy Code
+---------------------------------------------------------------------
+--[[
+  ReceivedFromProxy(idBinding, sCommand, tParams)
+    Function called by Director when a proxy bound to the specified binding sends a
+    BindMessage to the DriverWorks driver.
+
+  Parameters
+    idBinding
+      Binding ID of the proxy that sent a BindMessage to the DriverWorks driver.
+    sCommand
+      Command that was sent
+    tParams
+      Lua table of received command parameters
+--]]
+function ReceivedFromProxy(idBinding, sCommand, tParams)
+  if (sCommand ~= nil) then
+    if(tParams == nil)    -- initial table variable if nil
+      then tParams = {}
+    end
+    Dbg:Trace("ReceivedFromProxy(): " .. sCommand .. " on binding " .. idBinding .. "; Call Function " .. sCommand .. "(): " .. Utils.tableToString(tParams))
+
+    if (PRX_CMD[sCommand]) ~= nil then
+      PRX_CMD[sCommand](idBinding, tParams)
+    else
+      Dbg:Alert("ReceivedFromProxy: Unhandled command = " .. sCommand)
+    end
+  end
+end
+
+---------------------------------------------------------------------
+-- Notification Code
+---------------------------------------------------------------------
+-- notify with parameters
+function SendNotify(notifyText, Parms, bindingID)
+  C4:SendToProxy(bindingID, notifyText, Parms, "NOTIFY")
+end
+
+-- A notify with no parameters
+function SendSimpleNotify(notifyText, ...)
+  bindingID = select(1, ...) or DEFAULT_PROXY_BINDINGID
+  C4:SendToProxy(bindingID, notifyText, {}, "NOTIFY")
+end
+
+---------------------------------------------------------------------
+-- Initialization/Destructor Code
+---------------------------------------------------------------------
+--[[
+  OnDriverInit
+    Invoked by director when a driver is loaded. This API is provided for the driver developer to contain all of the driver
+    objects that will require initialization.
+--]]
+function OnDriverInit()
+  C4:ErrorLog("INIT_CODE: OnDriverInit()")
+  -- Call all ON_DRIVER_EARLY_INIT functions.
+  for k,v in pairs(ON_DRIVER_EARLY_INIT) do
+    if (ON_DRIVER_EARLY_INIT[k] ~= nil and type(ON_DRIVER_EARLY_INIT[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_EARLY_INIT." .. k .. "()")
+      ON_DRIVER_EARLY_INIT[k]()
+    end
+  end
+
+  -- Call all ON_DRIVER_INIT functions
+  for k,v in pairs(ON_DRIVER_INIT) do
+    if (ON_DRIVER_INIT[k] ~= nil and type(ON_DRIVER_INIT[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_INIT." .. k .. "()")
+      ON_DRIVER_INIT[k]()
+    end
+  end
+
+  -- Fire OnPropertyChanged to set the initial Headers and other Property global sets, they'll change if Property is changed.
+  for k,v in pairs(Properties) do
+    OnPropertyChanged(k)
+  end
+  
+  Utils.initStep = 5
+  
+  if (type(AfterPropertiesInitialUpdate) == "function") then
+    AfterPropertiesInitialUpdate()
+  end
+  
+  Utils.initStep = 6
+end
+
+--[[
+  OnDriverUpdate
+    Invoked by director when an update to a driver is requested. This request can occur either by adding a new version of a driver
+    through the driver search list or right clicking on the driver and selecting "Update Driver" from within ComposerPro.
+    Its purpose is to initialize all components of the driver that are reset during a driver update.
+--]]
+function OnDriverUpdate()
+  C4:ErrorLog("INIT_CODE: OnDriverUpdate()")
+  
+  -- Call all ON_DRIVER_UPDATE functions
+  for k,v in pairs(ON_DRIVER_UPDATE) do
+    if (ON_DRIVER_UPDATE[k] ~= nil and type(ON_DRIVER_UPDATE[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_UPDATE." .. k .. "()")
+      ON_DRIVER_UPDATE[k]()
+    end
+  end
+end
+
+--[[
+  OnDriverLateInit
+    Invoked by director after all drivers in the project have been loaded. This API is provided
+    for the driver developer to contain all of the driver objects that will require initialization
+    after all drivers in the project have been loaded.
+--]]
+function OnDriverLateInit()
+  C4:ErrorLog("INIT_CODE: OnDriverLateInit()")
+  
+  -- Call all ON_DRIVER_LATEINIT functions
+  for k,v in pairs(ON_DRIVER_LATEINIT) do
+    if (ON_DRIVER_LATEINIT[k] ~= nil and type(ON_DRIVER_LATEINIT[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_LATEINIT." .. k .. "()")
+      ON_DRIVER_LATEINIT[k]()
+    end
+  end
+end
+
+
+--[[
+  OnDriverDestroyed
+    Function called by Director when a driver is removed. Release things this driver has allocated such as timers.
+--]]
+function OnDriverDestroyed()
+  C4:ErrorLog("INIT_CODE: OnDriverDestroyed()")
+  -- Call all ON_DRIVER_DESTROYED functions
+  for k,v in pairs(ON_DRIVER_DESTROYED) do
+    if (ON_DRIVER_DESTROYED[k] ~= nil and type(ON_DRIVER_DESTROYED[k]) == "function") then
+      C4:ErrorLog("INIT_CODE: ON_DRIVER_DESTROYED." .. k .. "()")
+      ON_DRIVER_DESTROYED[k]()
+    end
+  end
+end
+
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+-- Debug Logging Code
+--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+Log = {}
+
+-- Create a Table with Logging functions
+function Log:Create()
+  
+  -- table for logging functions
+  local lt = {}
+  
+  lt._logLevel = 0
+  lt._outputPrint = false
+  lt._outputC4Log = false
+  lt._logName =  "Set Log Name to display"
+  function lt:IsLoggable(level)
+    return self._logLevel >= level
+  end
+  
+  function lt:SetLogLevel(level)
+    self._logLevel = level
+  end
+  
+  function lt:OutputPrint(value)
+    self._outputPrint = value
+  end
+  
+  function lt:OutputC4Log(value)
+    self._outputC4Log = value
+  end
+  
+  function lt:SetLogName(name)
+    self._logName = name
+  end
+
+  function lt:Enabled()
+    return (self._outputPrint or self._outputC4Log)
+  end
+  
+  function lt:PrintTable(tValue, sIndent)
+    if (type(tValue) == "table") then
+      if (self._outputPrint) then
+        for k,v in pairs(tValue) do
+          print(sIndent .. tostring(k) .. ":  " .. tostring(v))
+          if (type(v) == "table") then
+            self:PrintTable(v, sIndent .. "   ")
+          end
+        end
+      end
+  
+      if (self._outputC4Log) then
+        for k,v in pairs(tValue) do
+          C4:ErrorLog(self._logName .. ": " .. sIndent .. tostring(k) .. ":  " .. tostring(v))
+          if (type(v) == "table") then
+            self:PrintTable(v, sIndent .. "   ")
+          end
+        end
+      end
+
+    else
+      if (self._outputPrint) then
+        print (sIndent .. tValue)
+      end
+      
+      if (self._outputC4Log) then
+        C4:ErrorLog(self._logName .. ": " .. sIndent .. tValue)
+      end
+    end
+  end
+    
+  function lt:Print(logLevel, sLogText)
+    if (self._logLevel >= logLevel) then
+      if (type(sLogText) == "table") then
+        self:PrintTable(sLogText, "   ")
+        return
+      end
+      
+      if (self._outputPrint) then
+        print (sLogText)
+      end
+
+      if (self._outputC4Log) then
+        C4:ErrorLog(self._logName .. ": " .. sLogText)
+      end
+    end
+  end
+  
+  function lt:Alert(strDebugText)
+    self:Print(0, strDebugText)
+  end
+  
+  function lt:Error(strDebugText)
+    self:Print(1, strDebugText)
+  end
+  
+  function lt:Warn(strDebugText)
+    self:Print(2, strDebugText)
+  end
+  
+  function lt:Info(strDebugText)
+    self:Print(3, strDebugText)
+  end
+  
+  function lt:Trace(strDebugText)
+    self:Print(4, strDebugText)
+  end
+  
+  function lt:Debug(strDebugText)
+    self:Print(5, strDebugText)
+  end
+  
+  return lt
+end
+
+function ON_DRIVER_EARLY_INIT.LogLib()
+  -- Create and initialize debug logging
+  Dbg = Log.Create()
+  Dbg:SetLogName("base_template PLEASE CHANGE")
+end
+
+function ON_DRIVER_INIT.LogLib()
+  -- Create Debug Timer
+  gDebugTimer = Timer:Create("Debug", 45, "MINUTES", OnDebugTimerExpired)
+end
+
+--[[
+  OnDebugTimerExpired
+    Debug timer callback function
+--]]
+function OnDebugTimerExpired()
+  Dbg:Warn("Turning Debug Mode Off (timer expired)")
+  gDebugTimer:KillTimer()
+  C4:UpdateProperty("Debug Mode", "Off")
+  OnPropertyChanged("Debug Mode")
+end
+      
+---------------------------------------------------------------------
+-- Timer Code
+---------------------------------------------------------------------
+Timer = {}
+
+-- Create a Table with Timer functions
+function Timer:Create(name, interval, units, Callback, repeating, Info)
+  -- timers table
+  local tt = {}
+  
+  tt._name = name
+  tt._timerID = TimerLibGetNextTimerID()
+  tt._interval = interval
+  tt._units = units
+  tt._repeating = repeating or false
+  tt._Callback = Callback
+  tt._info = Info or ""
+  tt._id = 0
+
+  function tt:StartTimer(...)
+    self:KillTimer()
+    
+    -- optional parameters (interval, units, repeating)
+    if ... then
+      local interval = select(1, ...)
+      local units = select(2, ...)
+      local repeating = select(3, ...)
+      
+      self._interval = interval or self._interval
+      self._units = units or self._units
+      self._repeating = repeating or self._repeating
+    end
+    
+    if (self._interval > 0) then
+      Dbg:Trace("Starting Timer: " .. self._name)
+      self._id = C4:AddTimer(self._interval, self._units, self._repeating)
+    end
+  end
+
+  function tt:KillTimer()
+    if (self._id) then
+      self._id = C4:KillTimer(self._id)
+    end
+  end
+  
+  function tt:TimerStarted()
+    return (self._id ~= 0)
+  end
+      
+  function tt:TimerStopped()
+    return not self:TimerStarted()
+  end
+  
+  gTimerLibTimers[tt._timerID] = tt
+  Dbg:Trace("Created timer " .. tt._name)
+  
+  return tt
+end
+
+function TimerLibGetNextTimerID()
+  gTimerLibTimerCurID = gTimerLibTimerCurID + 1
+  return gTimerLibTimerCurID
+end
+
+function ON_DRIVER_EARLY_INIT.TimerLib()
+  gTimerLibTimers = {}
+  gTimerLibTimerCurID = 0
+end
+
+function ON_DRIVER_DESTROYED.TimerLib()
+  -- Kill open timers
+  for k,v in pairs(gTimerLibTimers) do
+    v:KillTimer()
+  end
+end
+
+--[[
+  OnTimerExpired
+    Function called by Director when the specified Control4 timer expires.
+  Parameters
+    idTimer
+      Timer ID of expired timer.
+--]]
+function OnTimerExpired(idTimer)
+  for k,v in pairs(gTimerLibTimers) do
+    if (idTimer == v._id) then
+      if (v._Callback) then
+        v._Callback(v._info)
+      end
+    end
+  end
+  
+  if (type(OnTimer4DriverExt)=="function") then
+    OnTimer4DriverExt(idTimer)
+  end
+end
+      
+      
+-------------------------------------------------------------------------------
+-- Below are common driver script
+
+------------------ RS232 assembler -----------------
+RS232Handler = {
+  _config = {pieceSize=8, pieceTimeout=3, callBack=nil},
+  _recvStrDatas = {},
+  _timerId = nil,
+  
+  onPieceRecieved = function(self, idBinding, strData)
+    if strData == nil then return end
+    
+    local tgtTbl = self._recvStrDatas[idBinding]
+    if (tgtTbl == nil) then 
+      self._recvStrDatas[idBinding] = {timerCnt=0,datas={}} 
+      tgtTbl = self._recvStrDatas[idBinding]
+    end
+    table.insert(tgtTbl.datas, strData)
+    if (self:_isLastPiece(strData)) then
+      tgtTbl.timerCnt = 0
+      self:_handleFrameData(idBinding)
+    else
+      tgtTbl.timerCnt = self._config.pieceTimeout
+    end
+  end,
+  
+  _isLastPiece = function(self, strData)
+    return #strData < self._config.pieceSize
+  end,
+  
+  onTimer = function(self, idTimer)
+    if not self._timerId then print("RS232 Handler not inited") return end
+    if (idTimer ~= self._timerId) then return end
+    -- Now it's my duty call
+    self:_cutdownTimer()
+  end,
+  
+  init = function(self, arg)
+    if (arg.pieceSize) then self._config.pieceSize = arg.pieceSize end
+    if (arg.pieceTimeout) then self._config.pieceTimeout = arg.pieceTimeout end
+    self._config.callBack = arg.callBack
+    if (type(self._config.callBack) ~= "function") then
+      print("!!!You must init RS232 with a data reciever callback function!")
+      print("!!!You must init RS232 with a data reciever callback function!!")
+      print("!!!You must init RS232 with a data reciever callback function!!!")
+      print("like RS232Handler:init({pieceSize=8, pieceTimeout=3,callBack=OnDataRecieved})")
+      print("   (Important things must say 3 times)")
+      return
+    end
+    
+    self._timerId = C4:AddTimer(10, "MILLISECONDS", true)
+  end,
+  
+  _cutdownTimer = function(self)
+    for idBinding,tbl in pairs(self._recvStrDatas) do
+      if (tbl.timerCnt > 0) then
+        tbl.timerCnt = tbl.timerCnt-1
+        if (tbl.timerCnt == 0) then
+          self:_handleFrameData(idBinding)
+        end
+      end
+    end
+  end,
+  
+  _handleFrameData = function(self, idBinding)
+    local tbl = self._recvStrDatas[idBinding]
+    
+    local str = "";
+    local len = #tbl.datas
+    if (len < 1) then
+      return
+    end
+  
+    for k=1,len do
+      str =  str .. tbl.datas[k]
+    end
+    tbl.datas = {}
+    self._config.callBack(idBinding, str)
+  end,
+}
+
+------------------------------------------------------
+---------------- Common Utils ------------------------
+Utils = {
+  DUMP_DATA_ALL = "All",
+  DUMP_DATA_NO = "No",
+  DUMP_DATA_RECIEVED = "Recieved",
+  OFF = "Off",
+  ON = "On",
+    
+  dumpData = "No",
+  
+  initStep = 0,
+  
+  pollingTimer = nil,
+  pollingDelayTimer = nil,
+  pollingSeconds = 0,
+  pollingDelaySeconds = 0,
+}
+function Utils.TemperatureF2C(fahrenheit)
+  return (tonumber(fahrenheit) - 32) / 1.8
+end
+
+function Utils.TemperatureC2F(celsius)
+  return tonumber(celsius) * 1.8 + 32
+end
+function Utils.byte0 (data)
+  return bit.band(data, 0xFF)
+end
+
+function Utils.byte1 (data)
+  return bit.band(bit.rshift(data, 8), 0xFF)
+end
+function Utils.BEtoUShort (strData)
+  local rst = 0;
+  local byte0, byte1 = string.byte(strData,1,2)
+  return byte0 * 256 + byte1
+end
+function Utils.BEtoShort (strData)
+  local rst = Utils.BEtoUShort(strData)
+  if (rst > 0x7FFF) then
+    return rst - 0x10000
+  end
+  return rst
+end
+function Utils.LEtoUShort (strData)
+  local rst = 0;
+  local byte0, byte1 = string.byte(strData,1,2)
+  return byte1 * 256 + byte0
+end
+function Utils.LEtoShort (strData)
+  local rst = Utils.LEtoUShort(strData)
+  if (rst > 0x7FFF) then
+    return rst - 0x10000
+  end
+  return rst
+end
+function Utils.isEmpty(something)
+  if (something == nil) then return true end
+  if (type(something) == "table") then
+    for k,v in pairs(something) do
+      return false
+    end
+    return true
+  elseif (type(something) == "string") then
+    return string.len(something) == 0
+  end
+  return false
+end
+function Utils.getSortedKeys(tbl)
+  local keyTbl = {}
+  for k,v in pairs(tbl) do
+    table.insert(keyTbl,k)
+  end
+  table.sort(keyTbl)
+  return keyTbl
+end
+function Utils.tableToString(tbl)
+  if (type(tbl) ~= "table") then return "Not a table: " .. tostring(tbl) end
+  local rstStr = "{"
+  local keyTbl = Utils.getSortedKeys(tbl)
+  for i,k in pairs(keyTbl) do
+    local v = tbl[k]
+    if (type(v) == "table") then
+      if (rstStr ~= "{") then
+        rstStr = rstStr .. ", "
+      end
+      rstStr = rstStr .. k .. "=" .. Utils.tableToString(v)
+    else
+      if (rstStr ~= "{") then
+        rstStr = rstStr .. ", "
+      end
+      rstStr = rstStr .. k .. "="
+      if (type(v) == "string") then
+        if (string.find(v,"[^\001-\127]")) then
+          rstStr = rstStr .. "Byte["  .. #v .. "]"
+        else
+          rstStr = rstStr .. "\"" .. (tostring(v) or "nil") .. "\""
+        end
+      else
+        rstStr = rstStr .. (tostring(v) or "nil")
+      end
+    end
+  end
+  return rstStr .. "}"
+end
+function Utils.verifyTableParams(tRules, tParams)
+  for name,rule in pairs(tRules) do
+    if (rule.type=="Number") then
+      local value = tonumber(tParams[name] or "nil")
+      if (value == nil) then
+        return "Member \"" .. name .. "\" must be a number"
+      end
+      if (type(rule.range) == "table") then
+        if (value < rule.range[1]) or (value > rule.range[2]) then
+          return "Member \"" .. name .. "\" should be in range [" .. rule.range[1] .. "," .. rule.range[2] .. "]"
+        end
+      end
+    elseif (rule.type == "List") then
+      local value = rule.values[tParams[name] or "nil"]
+      if (value == nil) then
+        local keys = Utils.getSortedKeys(rule.values)
+        return "Member \"" .. name .. "\" should be one of: " .. table.concat(keys,"/")
+      end
+    else
+      return "Not supported verify rule \"".. rule.type .."\""
+    end
+  end
+  return nil
+end
+function Utils.printCurrentTime()
+  print("Current Time:", os.date("%Y-%m-%d %H:%M:%S",os.time()))
+end
+---------- Polling task related methods -------------
+function Utils.pollingTask()
+--  print("pollingTask()")
+--  Utils.printCurrentTime()
+  if (type(DriverPollingTask) == "function") then
+    DriverPollingTask()
+  end
+end
+function Utils.startPollingTask()
+--  print("startPollingTask()")
+--  Utils.printCurrentTime()
+  Utils.pollingTimer = Timer:Create("polling timer", Utils.pollingSeconds, "SECONDS", Utils.pollingTask, true, "polling timer")
+  Utils.pollingTask()
+  Utils.pollingTimer:StartTimer()
+end
+function Utils.startPollingTimer()
+--  print("startPollingTimer()")
+--  Utils.printCurrentTime()
+  if (Utils.pollingDelayTimer) then
+     Utils.pollingDelayTimer:KillTimer()
+  end
+  if (Utils.pollingTimer) then
+     Utils.pollingTimer:KillTimer()
+  end
+  
+  if (Utils.pollingSeconds <= 0) then return end -- If polling-seconds value not a positive number, then do not start polling task
+  if (Utils.pollingDelaySeconds > 0) then 
+    -- If user want start polling after several seconds, then create task which will create real polling task
+    Utils.pollingDelayTimer = Timer:Create("polling delay timer", Utils.pollingDelaySeconds, "SECONDS", Utils.startPollingTask, false, "polling delay timer")
+    Utils.pollingDelayTimer:StartTimer()
+  else
+    Utils.startPollingTask()
+  end
+end
+function ON_DRIVER_LATEINIT.PollingTask()
+  Utils.startPollingTimer()
+end
+----------- Common properties related methods -------------
+function Utils.onPropertyChanged(propName, propVal)
+  if (propName == "Polling Delay Seconds") then
+    Utils.pollingDelaySeconds = tonumber(propVal) or 0
+    if (Utils.initStep >= 5) then Utils.startPollingTimer() end
+  elseif (propName == "Polling Period Seconds") then
+    Utils.pollingSeconds = tonumber(propVal) or 0
+    if (Utils.initStep >= 5) then Utils.startPollingTimer() end
+  elseif (propName == "Dump Data") then
+    Utils.dumpData = propVal
+  end
+end
+function Utils.handleDriverPropertyChange(tblCfg, propName, propValue)
+  local cfg = tblCfg[propName]
+  if (type(cfg) == "function") then cfg(propName, propValue) return end
+end
+
+
+
+
+DEVICE_CFG = {
+  CONNECTION_RS232 = 1,
+  CONNECTION_IMM1000D = 2,
+  connectedDrivers = {},
+  eventCnt = 0,
+}
+CONSTS = {
+  LIGHT = "LIGHT",
+  CURTAIN = "CURTAIN",
+  SCENARIO = "SCENARIO",
+  PARAM = { HG = "gatewayAddr",   LC="controllerAddr",  ITEM="itemType",      ZONE="zoneNumber",            GROUP="groupNumber", 
+            DRIVER="driverId",    POWER="power",        BRIGHT="brightness",  RESPCODE="responseCondition", CMDCODE="cmdType",
+            MODENO="modeNumber",  SETUP="setup",        CONDITION="condition"},
+}
+local COMMAND = {
+  CAT = {
+    REQUEST = 0x0A,
+    RESPONSE = 0x08,
+  },
+  ITEM = {
+    LIGHT = 0x12,
+    CURTAIN = 0x13,
+    SCENARIO = 0x14,
+    PACKAGE_ERROR = 0x87,
+  },
+  CODE = {
+    QUERY_REQ = 1,
+    QUERY_RESP = 2,
+    CONTROL_REQ = 3,
+    CONTROL_RESP = 4,
+    EVENT_REQ = 5,
+    EVENT_RESP = 6,
+  },
+  RESPONSE={
+    CONDITION = {   [0] = "OK",       [0xFF] = "Fault",      [0xFE] = "Address Error",    },
+    POWER     = {   [0] = "Off",      [1] = "On",    },
+    CLOSE_OPEN= {   [0] = "Close",    [1] = "Open",    },
+    SETUP     = {   [0] = "Close",    [1] = "Open",           [2] = "Stop",    },
+  }
+}
+
+---------------------- functional methods for RS232 commands --------------------------
+function calcCheckSum(strData, pStart, pEnd)
+  local sum = 0;
+  for i=pStart,pEnd do
+    sum = sum + string.byte(strData,i,i)
+  end
+  return Utils.byte0(bit.bxor(sum, 0xFF) + 2)
+end
+function verifyChecksum(strData)
+  local len = #strData - 2
+  local calcCheckSum = calcCheckSum(strData, 1, len)
+  local recvCheckSum, tailByte = string.byte(strData,len+1,len+2)
+  return (recvCheckSum == calcCheckSum) and (tailByte == 0x03)
+end
+function makeData(tNames, tData)
+  local cnt = 0
+  local strData = ""
+  if (tNames==nil) or (tData==nil) then return 0,nil end
+  for id,data in pairs (tData) do
+    for idx,name in pairs(tNames) do
+      if (data[name] == nil) then return 0,nil end
+      strData = strData .. string.char(Utils.byte0(tonumber(data[name])))
+    end
+    cnt = cnt + 1
+  end
+  return cnt,strData
+end
+function makeCommand(destAddr, srcAddr, CAT, ITEM, cmdCode, CNT, strData)
+  local dataLen = #strData + 4
+  local strCmd = string.char(0x02, destAddr, srcAddr, Utils.byte0(dataLen), Utils.byte1(dataLen), CAT, ITEM, cmdCode, CNT) .. strData
+  local checkSum = calcCheckSum(strCmd, 1, #strCmd)
+  return strCmd .. string.char(checkSum) .. string.char(3)
+end
+function showError(strMsg)
+  print("[ERROR]", strMsg)
+end
+function showErrorTParams(tParams, strMsg)
+  local strOutput = strMsg .. ": " .. Utils.tableToString(tParams)
+  showError(strOutput)
+end
+------------------- RS232 response related -----------------------
+function decodeMessage(strData)
+  local len = #strData
+  if (len < 12) then return nil end
+  if (string.byte(strData,1,1) ~= 0x02) then Dbg:Trace("Not start with 0x02") return nil end 
+  if (not verifyChecksum(strData)) then Dbg:Trace("CRC error") return nil end
+  local bodySize = Utils.LEtoUShort(string.sub(strData,4,5))
+  if (bodySize ~= (len-7)) then Dbg:Trace("Length not match SIZE") return nil end
+  local msg = {}
+  msg.DES = string.byte(strData, 2,2)
+  msg.SOU = string.byte(strData, 3,3)
+  msg.CAT = string.byte(strData,  6,6)
+  msg.ITEM = string.byte(strData,  7,7)
+  msg.CMD = string.byte(strData,  8,8)
+  msg.CNT = string.byte(strData,  9,9)
+  msg.DATA = string.sub(strData,10,len-2)
+  return msg
+end
+function OnRS232MessageRecieved(idBinding, strData)
+  local msg = decodeMessage(strData)
+  if (msg == nil) then 
+    if (Utils.dumpData == Utils.DUMP_DATA_ALL) then
+      print("There is some data in RS232 bus, but not for me:")
+      hexdump(strData)
+    end
+    return
+  end
+  if (Utils.dumpData == Utils.DUMP_DATA_RECIEVED) or (Utils.dumpData == Utils.DUMP_DATA_ALL) then
+    print("Recieved data from RS232 bus:")
+    hexdump(strData)
+    print(Utils.tableToString(msg))
+  end
+  cmdResponseProcess(idBinding, msg)
+end
+local responseHandlers = {
+  [COMMAND.ITEM.LIGHT] = {
+    [COMMAND.CODE.QUERY_RESP] = function (idBinding, msg) handleLightQueryResponse(idBinding, msg) end,
+    [COMMAND.CODE.CONTROL_RESP] = function (idBinding, msg) handleLightControlResponse(idBinding, msg) end,
+    [COMMAND.CODE.EVENT_REQ] = function (idBinding, msg) handleLightConditionEvent(idBinding, msg) end,
+    [COMMAND.CODE.EVENT_RESP] = function (idBinding, msg) handleLightConditionEvent(idBinding, msg) end,
+  },
+  [COMMAND.ITEM.CURTAIN] = {
+    [COMMAND.CODE.QUERY_RESP] = function (idBinding, msg) handleCurtainQueryResponse(idBinding, msg) end,
+    [COMMAND.CODE.CONTROL_RESP] = function (idBinding, msg) handleCurtainControlResponse(idBinding, msg) end,
+    [COMMAND.CODE.EVENT_REQ] = function (idBinding, msg) handleCurtainConditionEvent(idBinding, msg) end,
+    [COMMAND.CODE.EVENT_RESP] = function (idBinding, msg) handleCurtainConditionEvent(idBinding, msg) end,
+  },
+  [COMMAND.ITEM.SCENARIO] = {
+    [COMMAND.CODE.QUERY_RESP] = function (idBinding, msg) handleScenarioQueryResponse(idBinding, msg) end,
+    [COMMAND.CODE.CONTROL_RESP] = function (idBinding, msg) handleScenarioControlResponse(idBinding, msg) end,
+    [COMMAND.CODE.EVENT_REQ] = function (idBinding, msg) handleScenarioConditionEvent(idBinding, msg) end,
+    [COMMAND.CODE.EVENT_RESP] = function (idBinding, msg) handleScenarioConditionEvent(idBinding, msg) end,
+  },
+  [COMMAND.ITEM.PACKAGE_ERROR] = {
+    [COMMAND.CODE.EVENT_REQ] = function (idBinding, msg) handlePackageError(idBinding, msg) end,
+    [COMMAND.CODE.EVENT_RESP] = function (idBinding, msg) handlePackageError(idBinding, msg) end,
+  },
+}
+function cmdResponseProcess(idBinding, msg)
+  local deviceHandler = responseHandlers[msg.ITEM]
+  if (deviceHandler == nil) then 
+    Dbg:Error("Unknow device message to handle: " .. msg.ITEM)
+    return
+  end
+  local cmdHandler = deviceHandler[msg.CMD]
+  if (cmdHandler == nil) then
+    Dbg:Error("Unknow command message to handle: " .. msg.CMD)
+    return
+  end
+  cmdHandler(idBinding, msg)
+end
+  ---------------------- Light related response ----------------------------
+function handleLightQueryResponse(idBinding, msg)
+  local dataLen = msg.CNT * 5
+  if (#(msg.DATA) ~= dataLen) then Dbg:Error("Invalid message body length") return end
+  for i=1,msg.CNT do
+    local tParams = {[CONSTS.PARAM.CMDCODE]="QueryResponse", [CONSTS.PARAM.HG]=msg.DES,[CONSTS.PARAM.LC]=msg.SOU}
+    local curDataStartPos = (i-1)*5
+    tParams[CONSTS.PARAM.ZONE] = string.byte(msg.DATA,curDataStartPos+1, curDataStartPos+1)
+    tParams[CONSTS.PARAM.GROUP] = string.byte(msg.DATA,curDataStartPos+2, curDataStartPos+2)
+    tParams[CONSTS.PARAM.RESPCODE] = COMMAND.RESPONSE.CONDITION[string.byte(msg.DATA,curDataStartPos+3, curDataStartPos+3)] or "Unknown"
+    tParams[CONSTS.PARAM.POWER] = COMMAND.RESPONSE.POWER[string.byte(msg.DATA,curDataStartPos+4, curDataStartPos+4)] or "Unknown"
+    tParams[CONSTS.PARAM.BRIGHT] = string.byte(msg.DATA,curDataStartPos+5, curDataStartPos+5)
+    updateLightState(tParams)
+  end
+end
+function handleLightControlResponse(idBinding, msg)
+  local dataLen = msg.CNT * 3
+  if (#(msg.DATA) ~= dataLen) then Dbg:Error("Invalid message body length") return end
+  for i=1,msg.CNT do
+    local tParams = {[CONSTS.PARAM.CMDCODE]="ControlResponse", [CONSTS.PARAM.HG]=msg.DES,[CONSTS.PARAM.LC]=msg.SOU}
+    local curDataStartPos = (i-1)*3
+    tParams[CONSTS.PARAM.ZONE] = string.byte(msg.DATA,curDataStartPos+1, curDataStartPos+1)
+    tParams[CONSTS.PARAM.GROUP] = string.byte(msg.DATA,curDataStartPos+2, curDataStartPos+2)
+    tParams[CONSTS.PARAM.RESPCODE] = COMMAND.RESPONSE.CONDITION[string.byte(msg.DATA,curDataStartPos+3, curDataStartPos+3)] or "Unknown"
+    updateLightState(tParams)
+  end
+end
+function handleLightConditionEvent(idBinding, msg)
+  local dataLen = msg.CNT * 5
+  if (#(msg.DATA) ~= dataLen) then Dbg:Error("Invalid message body length") return end
+  for i=1,msg.CNT do
+    local tParams = {[CONSTS.PARAM.CMDCODE]="ConditionEvent", [CONSTS.PARAM.HG]=msg.DES,[CONSTS.PARAM.LC]=msg.SOU}
+    local curDataStartPos = (i-1)*5
+    tParams[CONSTS.PARAM.ZONE] = string.byte(msg.DATA,curDataStartPos+1, curDataStartPos+1)
+    tParams[CONSTS.PARAM.GROUP] = string.byte(msg.DATA,curDataStartPos+2, curDataStartPos+2)
+    tParams[CONSTS.PARAM.RESPCODE] = COMMAND.RESPONSE.CONDITION[string.byte(msg.DATA,curDataStartPos+3, curDataStartPos+3)] or "Unknown"
+    tParams[CONSTS.PARAM.POWER] = COMMAND.RESPONSE.POWER[string.byte(msg.DATA,curDataStartPos+4, curDataStartPos+4)] or "Unknown"
+    tParams[CONSTS.PARAM.BRIGHT] = string.byte(msg.DATA,curDataStartPos+5, curDataStartPos+5)
+    updateLightState(tParams)
+  end
+end
+    ----------------------- Curtain related response -------------------------
+function handleCurtainQueryResponse(idBinding, msg)
+  local dataLen = msg.CNT * 4
+  if (#(msg.DATA) ~= dataLen) then Dbg:Error("Invalid message body length") return end
+  for i=1,msg.CNT do
+    local tParams = {[CONSTS.PARAM.CMDCODE]="QueryResponse", [CONSTS.PARAM.HG]=msg.DES,[CONSTS.PARAM.LC]=msg.SOU}
+    local curDataStartPos = (i-1)*4
+    tParams[CONSTS.PARAM.ZONE] = string.byte(msg.DATA,curDataStartPos+1, curDataStartPos+1)
+    tParams[CONSTS.PARAM.GROUP] = string.byte(msg.DATA,curDataStartPos+2, curDataStartPos+2)
+    tParams[CONSTS.PARAM.RESPCODE] = COMMAND.RESPONSE.CONDITION[string.byte(msg.DATA,curDataStartPos+3, curDataStartPos+3)] or "Unknown"
+    tParams[CONSTS.PARAM.CONDITION] = COMMAND.RESPONSE.CLOSE_OPEN[string.byte(msg.DATA,curDataStartPos+4, curDataStartPos+4)] or "Unknown"
+    updateCurtainState(tParams)
+  end
+end
+function handleCurtainControlResponse(idBinding, msg)
+  local dataLen = msg.CNT * 3
+  if (#(msg.DATA) ~= dataLen) then Dbg:Error("Invalid message body length") return end
+  for i=1,msg.CNT do
+    local tParams = {[CONSTS.PARAM.CMDCODE]="ControlResponse", [CONSTS.PARAM.HG]=msg.DES,[CONSTS.PARAM.LC]=msg.SOU}
+    local curDataStartPos = (i-1)*3
+    tParams[CONSTS.PARAM.ZONE] = string.byte(msg.DATA,curDataStartPos+1, curDataStartPos+1)
+    tParams[CONSTS.PARAM.GROUP] = string.byte(msg.DATA,curDataStartPos+2, curDataStartPos+2)
+    tParams[CONSTS.PARAM.RESPCODE] = COMMAND.RESPONSE.CONDITION[string.byte(msg.DATA,curDataStartPos+3, curDataStartPos+3)] or "Unknown"
+    updateCurtainState(tParams)
+  end
+end
+function handleCurtainConditionEvent(idBinding, msg)
+  local dataLen = msg.CNT * 4
+  if (#(msg.DATA) ~= dataLen) then Dbg:Error("Invalid message body length") return end
+  for i=1,msg.CNT do
+    local tParams = {[CONSTS.PARAM.CMDCODE]="ConditionEvent", [CONSTS.PARAM.HG]=msg.DES,[CONSTS.PARAM.LC]=msg.SOU}
+    local curDataStartPos = (i-1)*4
+    tParams[CONSTS.PARAM.ZONE] = string.byte(msg.DATA,curDataStartPos+1, curDataStartPos+1)
+    tParams[CONSTS.PARAM.GROUP] = string.byte(msg.DATA,curDataStartPos+2, curDataStartPos+2)
+    tParams[CONSTS.PARAM.RESPCODE] = COMMAND.RESPONSE.CONDITION[string.byte(msg.DATA,curDataStartPos+3, curDataStartPos+3)] or "Unknown"
+    tParams[CONSTS.PARAM.CONDITION] = COMMAND.RESPONSE.CLOSE_OPEN[string.byte(msg.DATA,curDataStartPos+4, curDataStartPos+4)] or "Unknown"
+    updateCurtainState(tParams)
+  end
+end
+function handleScenarioQueryResponse(idBinding, msg)
+  local dataLen = msg.CNT * 2
+  if (#(msg.DATA) ~= dataLen) then Dbg:Error("Invalid message body length") return end
+  for i=1,msg.CNT do
+    local tParams = {[CONSTS.PARAM.CMDCODE]="QueryResponse", [CONSTS.PARAM.HG]=msg.DES,[CONSTS.PARAM.LC]=msg.SOU}
+    local curDataStartPos = (i-1)*2
+    tParams[CONSTS.PARAM.ZONE] = string.byte(msg.DATA,curDataStartPos+1, curDataStartPos+1)
+    tParams[CONSTS.PARAM.MODENO] = string.byte(msg.DATA,curDataStartPos+2, curDataStartPos+2)
+    updateScenarioState(tParams)
+  end
+end
+function handleScenarioControlResponse(idBinding, msg)
+  local dataLen = msg.CNT * 2
+  if (#(msg.DATA) ~= dataLen) then Dbg:Error("Invalid message body length") return end
+  for i=1,msg.CNT do
+    local tParams = {[CONSTS.PARAM.CMDCODE]="ControlResponse", [CONSTS.PARAM.HG]=msg.DES,[CONSTS.PARAM.LC]=msg.SOU}
+    local curDataStartPos = (i-1)*2
+    tParams[CONSTS.PARAM.ZONE] = string.byte(msg.DATA,curDataStartPos+1, curDataStartPos+1)
+    tParams[CONSTS.PARAM.RESPCODE] = COMMAND.RESPONSE.CONDITION[string.byte(msg.DATA,curDataStartPos+2, curDataStartPos+2)] or "Unknown"
+    updateScenarioState(tParams)
+  end
+end
+function handleScenarioConditionEvent(idBinding, msg)
+--  -- TODO
+--  print("handleScenarioConditionEvent not done yet")
+  print("Scenario don't have condition event according to data sheet")
+end
+function handlePackageError(idBinding, msg)
+  local strMsg = "Package Error:"
+  local errorCodeMap = {[0xF0]="STX", [0xF1]="DES",[0xF2]="SOU",[0xF3]="SIZE", [0xF4]="CAT", [0xF5]="DEV",[0xF6]="CMD", [0x07]="CNT", [0x08]="CRC",[0x09]="ETX"}
+  local errorCode = errorCodeMap[string.byte(msg.DATA)] or "Unknown"
+  strMsg = strMsg .. "\n\terror code=".. errorCode
+  if (#(msg.DATA) ~= 12) then
+    strMsg = strMsg .. "\n\tinvalid body, unknown package"
+  else
+    local stx,des,sou,sizeLo,sizeHigh,cat,dev,cmd,cnt,crc,etx = string.byte(msg.DATA,2,12)
+    strMsg = strMsg .. string.format("\n\tSTX=%02X DES=%02X SOU=%02X SIZE=%d, CAT=%02X DEV=%02X CMD=%02X CNT=%02X CRC=%02X ETX=%02X",
+      stx,des,sou,(sizeLo+sizeHigh*256),cat,dev,cmd,cnt,crc,etx)
+  end
+  if Dbg:IsLoggable(2) then
+    Dbg:Warn(strMsg)
+  else
+    print(strMsg)
+  end
+end
+-- TODO ----------------- RS232 Command constructors -------------------
+cmdMaker = {
+   commandCode = nil,
+   commandParams = nil,
+   -------------------------- Light related command -------------------------
+   cmdQueryLight = {
+      command = function(tParams)
+        -- tParams = {destAddr=0xE1, srcAddr=0x01, data={{zoneNumber=1, groupNumber=1},{zoneNumber=1, groupNumber=2}}}
+        local CNT, strData = makeData({CONSTS.PARAM.ZONE,CONSTS.PARAM.GROUP}, tParams.data)
+        if (strData == nil) then  showErrorTParams(tParams, "Error when make command QueryLight") return nil end
+        return makeCommand(tParams[CONSTS.PARAM.LC], tParams[CONSTS.PARAM.HG], COMMAND.CAT.REQUEST, COMMAND.ITEM.LIGHT, COMMAND.CODE.QUERY_REQ,CNT,strData)
+      end,
+      paramsRules = {
+        [CONSTS.PARAM.HG] = {type="Number", range={1,0x1F}},
+        [CONSTS.PARAM.LC] = {type="Number", range={0xE1,0xEF}},
+        [CONSTS.PARAM.ZONE] = {type="Number", range={0,255}},
+        [CONSTS.PARAM.GROUP] = {type="Number", range={0,255}},
+      },
+      responseHandler = nil,
+   },
+   cmdControlLight = {
+      command = function(tParams)
+        -- tParams = {destAddr=0xE1, srcAddr=0x01, data={{zoneNumber=1, groupNumber=2, power=1, brightness=5}}}
+        local CNT, strData = makeData({CONSTS.PARAM.ZONE,CONSTS.PARAM.GROUP,CONSTS.PARAM.POWER,CONSTS.PARAM.BRIGHT}, tParams.data)
+        if (strData == nil) then  showErrorTParams(tParams, "Error when make command ControlLight") return nil end
+        return makeCommand(tParams[CONSTS.PARAM.LC], tParams[CONSTS.PARAM.HG], COMMAND.CAT.REQUEST, COMMAND.ITEM.LIGHT, COMMAND.CODE.CONTROL_REQ,CNT,strData)
+      end,
+      paramsRules = {
+        [CONSTS.PARAM.HG] = {type="Number", range={1,0x1F}},
+        [CONSTS.PARAM.LC] = {type="Number", range={0xE1,0xEF}},
+        [CONSTS.PARAM.ZONE] = {type="Number", range={0,255}},
+        [CONSTS.PARAM.GROUP] = {type="Number", range={0,255}},
+        [CONSTS.PARAM.POWER] = {type="List", values={["Off"]=0,["On"]=1}},
+        [CONSTS.PARAM.BRIGHT] = {type="Number", range={0,10}},
+      },
+      responseHandler = nil,
+   },
+   -------------------------- Curtain related command -------------------------
+   cmdQueryCurtain = {
+      command = function(tParams)
+        -- tParams = {destAddr=0xE1, srcAddr=0x01, data={{zoneNumber=1, groupNumber=1},{zoneNumber=1, groupNumber=2}}}
+        local CNT, strData = makeData({CONSTS.PARAM.ZONE,CONSTS.PARAM.GROUP}, tParams.data)
+        if (strData == nil) then  showErrorTParams(tParams, "Error when make command QueryCurtain") return nil end
+        return makeCommand(tParams[CONSTS.PARAM.LC], tParams[CONSTS.PARAM.HG], COMMAND.CAT.REQUEST, COMMAND.ITEM.CURTAIN, COMMAND.CODE.QUERY_REQ,CNT,strData)
+      end,
+      paramsRules = {
+        [CONSTS.PARAM.HG] = {type="Number", range={1,0x1F}},
+        [CONSTS.PARAM.LC] = {type="Number", range={0xE1,0xEF}},
+        [CONSTS.PARAM.ZONE] = {type="Number", range={0,255}},
+        [CONSTS.PARAM.GROUP] = {type="Number", range={0,255}},
+      },
+      responseHandler = nil,
+   },
+   cmdControlCurtain = {
+      command = function(tParams)
+        -- tParams = {destAddr=0xE1, srcAddr=0x01, data={{zoneNumber=1, groupNumber=2, setup=0/1/2}}}
+        local CNT, strData = makeData({CONSTS.PARAM.ZONE,CONSTS.PARAM.GROUP,CONSTS.PARAM.SETUP}, tParams.data)
+        if (strData == nil) then  showErrorTParams(tParams, "Error when make command ControlCurtain") return nil end
+        return makeCommand(tParams[CONSTS.PARAM.LC], tParams[CONSTS.PARAM.HG], COMMAND.CAT.REQUEST, COMMAND.ITEM.CURTAIN, COMMAND.CODE.CONTROL_REQ,CNT,strData)
+      end,
+      paramsRules = {
+        [CONSTS.PARAM.HG] = {type="Number", range={1,0x1F}},
+        [CONSTS.PARAM.LC] = {type="Number", range={0xE1,0xEF}},
+        [CONSTS.PARAM.ZONE] = {type="Number", range={0,255}},
+        [CONSTS.PARAM.GROUP] = {type="Number", range={0,255}},
+        [CONSTS.PARAM.SETUP] = {type="List", values={["Close"]=0,["Open"]=1,["Stop"]=2}},
+      },
+      responseHandler = nil,
+   },
+   -------------------------- Senario related command -------------------------
+   cmdQueryScenario = {
+      command = function(tParams)
+        -- tParams = {destAddr=0xE1, srcAddr=0x01, data={{zoneNumber=1},{zoneNumber=2}}}
+        local CNT, strData = makeData({CONSTS.PARAM.ZONE}, tParams.data)
+        if (strData == nil) then  showErrorTParams(tParams, "Error when make command QueryScenario") return nil end
+        return makeCommand(tParams[CONSTS.PARAM.LC], tParams[CONSTS.PARAM.HG], COMMAND.CAT.REQUEST, COMMAND.ITEM.SCENARIO, COMMAND.CODE.QUERY_REQ,CNT,strData)
+      end,
+      paramsRules = {
+        [CONSTS.PARAM.HG] = {type="Number", range={1,0x1F}},
+        [CONSTS.PARAM.LC] = {type="Number", range={0xE1,0xEF}},
+        [CONSTS.PARAM.ZONE] = {type="Number", range={0,20}},
+      },
+      responseHandler = nil,
+   },
+   cmdControlScenario = {
+      command = function(tParams)
+        -- tParams = {destAddr=0xE1, srcAddr=0x01, data={{zoneNumber=1, modeNumber=2}}}
+        local CNT, strData = makeData({CONSTS.PARAM.ZONE,CONSTS.PARAM.MODENO}, tParams.data)
+        if (strData == nil) then  showErrorTParams(tParams, "Error when make command ControlScenario") return nil end
+        return makeCommand(tParams[CONSTS.PARAM.LC], tParams[CONSTS.PARAM.HG], COMMAND.CAT.REQUEST, COMMAND.ITEM.SCENARIO, COMMAND.CODE.CONTROL_REQ,CNT,strData)
+      end,
+      paramsRules = {
+        [CONSTS.PARAM.HG] = {type="Number", range={1,0x1F}},
+        [CONSTS.PARAM.LC] = {type="Number", range={0xE1,0xEF}},
+        [CONSTS.PARAM.ZONE] = {type="Number", range={0,20}},
+        [CONSTS.PARAM.MODENO] = {type="Number", range={1,15}},
+      },
+      responseHandler = nil,
+   },
+}
+function sendOneCommand(cmdName, tParams)
+  local cmdHandler = cmdMaker[cmdName]
+  if (cmdHandler == nil) then
+    print("Error: no command " .. cmdName .. " defined")
+    return
+  end
+  local strCmd = cmdHandler.command(tParams)
+  C4:SendToSerial(DEVICE_CFG.CONNECTION_RS232,strCmd)
+  if (Utils.dumpData == Utils.DUMP_DATA_ALL) then
+    print("Send data to RS232:")
+    hexdump(strCmd)
+  end
+end
+-- TODO ------------------------ Communication methods ------------------------------
+function updateLightState(tParams)
+  if (Dbg:IsLoggable(4)) then
+    Dbg:Trace("updateLightState():" .. Utils.tableToString(tParams))
+  end
+  local connectedDrivers = findConnectedDriver(CONSTS.LIGHT, tParams)
+  if (Utils.isEmpty(connectedDrivers)) then Dbg:Warn("No any wanted light connected to gateway.") return end
+  for drvID,drvInfo in pairs(connectedDrivers) do
+    C4:SendToDevice(drvID,"UpdateLightState",tParams)
+  end
+end
+function updateCurtainState(tParams)
+  if (Dbg:IsLoggable(4)) then
+    Dbg:Trace("updateCurtainState():" .. Utils.tableToString(tParams))
+  end
+  local connectedDrivers = findConnectedDriver(CONSTS.CURTAIN, tParams)
+  if (Utils.isEmpty(connectedDrivers)) then Dbg:Warn("No any wanted curtain connected to gateway.") return end
+  for drvID,drvInfo in pairs(connectedDrivers) do
+    C4:SendToDevice(drvID,"UpdateCurtainState",tParams)
+  end
+end
+function updateScenarioState(tParams)
+  if (Dbg:IsLoggable(4)) then
+    Dbg:Trace("updateScenarioState():" .. Utils.tableToString(tParams))
+  end
+  local connectedDrivers = findConnectedDriver(CONSTS.SCENARIO, tParams)
+  if (Utils.isEmpty(connectedDrivers)) then Dbg:Warn("No any wanted scenario connected to gateway.") return end
+  for drvID,drvInfo in pairs(connectedDrivers) do
+    C4:SendToDevice(drvID,"UpdateScenarioState",tParams)
+  end
+end
+-- TODO ------------------------ Driver connection methods --------------------------
+function isMatchedDriver(tParams, data, mustMatchParams, zeroMatchParams)
+  for i,name in pairs(mustMatchParams) do
+    if (tParams[name] ~= data[name]) then return false end
+  end
+  for i,name in pairs(zeroMatchParams) do
+    if (tParams[name] ~= 0) and (tParams[name] ~= data[name]) then return false end
+  end
+  return true
+end
+function showConnectedDrivers()
+  local itemTypes = {CONSTS.LIGHT, CONSTS.CURTAIN, CONSTS.SCENARIO}
+  for i,itemType in pairs(itemTypes) do
+    local curItemDrivers = DEVICE_CFG.connectedDrivers[itemType]
+    if (curItemDrivers ~= nil) then
+      print(itemType)
+      local keyset = Utils.getSortedKeys(curItemDrivers)
+      for id,drvId in pairs(keyset) do
+        print("\t" .. Utils.tableToString(curItemDrivers[keyset[id]]))
+      end
+    else
+      print(itemType .. "\n\tNo any connected drivers")
+    end
+  end
+end
+function findConnectedDriver(strType, tParams)
+  local mustMatchParams = {CONSTS.PARAM.HG, CONSTS.PARAM.LC}
+  local zeroMatchParams = {CONSTS.PARAM.ZONE}
+  if (strType ~= CONSTS.SCENARIO) then table.insert(zeroMatchParams,CONSTS.PARAM.GROUP) end
+  local connectedDrivers = DEVICE_CFG.connectedDrivers[strType]
+  if (connectedDrivers == nil) then return {} end
+  local result = {}
+  for drvId,data in pairs(connectedDrivers) do
+    if (isMatchedDriver(tParams, data, mustMatchParams, zeroMatchParams)) then
+      result[drvId] = data
+    end
+  end
+  return result
+end
+function _refreshDriverConnections()
+  DEVICE_CFG.connectedDrivers = {}
+  
+  local devs = C4:GetBoundConsumerDevices(0, DEVICE_CFG.CONNECTION_IMM1000D)
+  local devId = C4:GetDeviceID()
+  for id,name in pairs(devs) do
+    C4:SendToDevice(id,"GetDriverInfo",{deviceId=devId})
+  end
+end
+function _connectDriver(tParams)
+  -- tParams = {gatewayAddr=1, controllerAddr=0xE1, itemType="LIGHT", zoneNumber=1, groupNumber=2, driverId=334}
+  local driverId = tonumber(tParams[CONSTS.PARAM.DRIVER])
+  if (DEVICE_CFG.connectedDrivers[tParams[CONSTS.PARAM.ITEM]] == nil) then DEVICE_CFG.connectedDrivers[tParams[CONSTS.PARAM.ITEM]] = {} end
+  local itemConnected = DEVICE_CFG.connectedDrivers[tParams[CONSTS.PARAM.ITEM]]
+  local driver = itemConnected[driverId]
+  if (driver == nil) then
+    itemConnected[driverId] = {}
+    driver = itemConnected[driverId]
+  end
+  local connectCaredParamNames = {CONSTS.PARAM.HG,CONSTS.PARAM.LC,CONSTS.PARAM.ITEM,CONSTS.PARAM.ZONE,CONSTS.PARAM.GROUP,CONSTS.PARAM.DRIVER}
+  for i,name in pairs(connectCaredParamNames) do
+    driver[name] = tonumber(tParams[name]) or tParams[name]
+  end
+end
+function LUA_ACTION.showConnectedDrivers()
+  showConnectedDrivers()
+end
+function LUA_ACTION.refreshConnections()
+  _refreshDriverConnections()
+end
+function EX_CMD.connectDriver(tParams)
+  _connectDriver(tParams)
+end
+
+-- TODO ------------------- C4 Command interface -------------------------
+function refreshConnection(tParams, driverType)
+  tParams[CONSTS.PARAM.ITEM] = driverType
+  _connectDriver(tParams)
+  return DEVICE_CFG.connectedDrivers[driverType][tonumber(tParams[CONSTS.PARAM.DRIVER])]
+end
+function copyParams(tFrom, tTo, tParams, tRule)
+  for i,name in pairs(tParams) do
+    local rule = tRule[name]
+    if (rule.type == "Number") then
+      tTo[name] = tonumber(tFrom[name])
+    elseif (rule.type == "List") then
+      tTo[name] = tRule[name].values[tFrom[name]]
+    end
+    if (tTo[name] == nil) then
+      print("Cannot copy param " .. name .." with rule " .. Utils.tableToString(tRule[name]))
+    end
+  end
+end
+function queryLight(tParams)
+  local paramsRules = cmdMaker.cmdQueryLight.paramsRules
+  local msg = Utils.verifyTableParams(paramsRules, tParams)
+  if (msg ~= nil) then showError("CMD queryLight params error: " .. msg) return end
+  local tCmdParam = {data={{}}}
+  copyParams(tParams, tCmdParam, {CONSTS.PARAM.HG, CONSTS.PARAM.LC}, paramsRules)
+  copyParams(tParams, tCmdParam.data[1], {CONSTS.PARAM.ZONE, CONSTS.PARAM.GROUP}, paramsRules)
+  refreshConnection(tParams, CONSTS.LIGHT)
+  sendOneCommand("cmdQueryLight", tCmdParam)
+end
+function EX_CMD.queryLight(tParams)
+  queryLight(tParams)
+end
+function PRX_CMD.queryLight(idBinding, tParams)
+  queryLight(tParams)
+end
+function controlLight(tParams)
+  local paramsRules = cmdMaker.cmdControlLight.paramsRules
+  local msg = Utils.verifyTableParams(paramsRules, tParams)
+  if (msg ~= nil) then showError("CMD controlLight params error: " .. msg) return end
+  local tCmdParam = {data={{}}}
+  copyParams(tParams, tCmdParam, {CONSTS.PARAM.HG, CONSTS.PARAM.LC}, paramsRules)
+  copyParams(tParams, tCmdParam.data[1], {CONSTS.PARAM.ZONE, CONSTS.PARAM.GROUP, CONSTS.PARAM.POWER, CONSTS.PARAM.BRIGHT}, paramsRules)
+  local cachedDriver = refreshConnection(tParams, CONSTS.LIGHT)
+  cachedDriver[CONSTS.PARAM.POWER] = tParams[CONSTS.PARAM.POWER]
+  cachedDriver[CONSTS.PARAM.BRIGHT] = tParams[CONSTS.PARAM.BRIGHT]
+  sendOneCommand("cmdControlLight", tCmdParam)
+end
+function EX_CMD.controlLight(tParams)
+  controlLight(tParams)
+end
+function PRX_CMD.controlLight(idBinding, tParams)
+  controlLight(tParams)
+end
+function queryCurtain(tParams)
+  local paramsRules = cmdMaker.cmdQueryCurtain.paramsRules
+  local msg = Utils.verifyTableParams(paramsRules, tParams)
+  if (msg ~= nil) then showError("CMD queryCurtain params error: " .. msg) return end
+  local tCmdParam = {data={{}}}
+  copyParams(tParams, tCmdParam, {CONSTS.PARAM.HG, CONSTS.PARAM.LC}, paramsRules)
+  copyParams(tParams, tCmdParam.data[1], {CONSTS.PARAM.ZONE, CONSTS.PARAM.GROUP}, paramsRules)
+  refreshConnection(tParams, CONSTS.CURTAIN)
+  sendOneCommand("cmdQueryCurtain", tCmdParam)
+end
+function EX_CMD.queryCurtain(tParams)
+  queryCurtain(tParams)
+end
+function PRX_CMD.queryCurtain(idBinding, tParams)
+  queryCurtain(tParams)
+end
+function controlCurtain(tParams)
+  local paramsRules = cmdMaker.cmdControlCurtain.paramsRules
+  local msg = Utils.verifyTableParams(paramsRules, tParams)
+  if (msg ~= nil) then showError("CMD controlCurtain params error: " .. msg) return end
+  local tCmdParam = {data={{}}}
+  copyParams(tParams, tCmdParam, {CONSTS.PARAM.HG, CONSTS.PARAM.LC}, paramsRules)
+  copyParams(tParams, tCmdParam.data[1], {CONSTS.PARAM.ZONE, CONSTS.PARAM.GROUP, CONSTS.PARAM.SETUP}, paramsRules)
+  refreshConnection(tParams, CONSTS.CURTAIN)[CONSTS.PARAM.SETUP] = tParams[CONSTS.PARAM.SETUP]
+  sendOneCommand("cmdControlCurtain", tCmdParam)
+end
+function EX_CMD.controlCurtain(tParams)
+  controlCurtain(tParams)
+end
+function PRX_CMD.controlCurtain(idBinding, tParams)
+  controlCurtain(tParams)
+end
+function queryScenario(tParams)
+  local paramsRules = cmdMaker.cmdQueryScenario.paramsRules
+  local msg = Utils.verifyTableParams(paramsRules, tParams)
+  if (msg ~= nil) then showError("CMD queryScenario params error: " .. msg) return end
+  local tCmdParam = {data={{}}}
+  copyParams(tParams, tCmdParam, {CONSTS.PARAM.HG, CONSTS.PARAM.LC}, paramsRules)
+  copyParams(tParams, tCmdParam.data[1], {CONSTS.PARAM.ZONE}, paramsRules)
+  refreshConnection(tParams, CONSTS.SCENARIO)
+  sendOneCommand("cmdQueryScenario", tCmdParam)
+end
+function EX_CMD.queryScenario(tParams)
+  queryScenario(tParams)
+end
+function PRX_CMD.queryScenario(idBinding, tParams)
+  queryScenario(tParams)
+end
+function controlScenario(tParams)
+  local paramsRules = cmdMaker.cmdControlScenario.paramsRules
+  local msg = Utils.verifyTableParams(paramsRules, tParams)
+  if (msg ~= nil) then showError("CMD controlScenario params error: " .. msg) return end
+  local tCmdParam = {data={{}}}
+  copyParams(tParams, tCmdParam, {CONSTS.PARAM.HG, CONSTS.PARAM.LC}, paramsRules)
+  copyParams(tParams, tCmdParam.data[1], {CONSTS.PARAM.ZONE, CONSTS.PARAM.MODENO}, paramsRules)
+  refreshConnection(tParams, CONSTS.SCENARIO)[CONSTS.PARAM.MODENO] = tParams[CONSTS.PARAM.MODENO]
+  sendOneCommand("cmdControlScenario", tCmdParam)
+end
+function EX_CMD.controlScenario(tParams)
+  controlScenario(tParams)
+end
+function PRX_CMD.controlScenario(idBinding, tParams)
+  controlScenario(tParams)
+end
+-- TODO ---------------------- initial driver ----------------------
+--function DriverPollingTask()
+--  no polling task needed
+--end
+function ReceivedFromSerial(idBinding, strData)
+  RS232Handler:onPieceRecieved(idBinding,strData)
+end
+--function OnPropertyChanged4DriverExt(propName, propValue)
+--  --Utils.handleDriverPropertyChange(DEVICE_CFG.properties, propName, propValue)
+-- no properties for gateway itself
+--end
+function OnTimer4DriverExt(idTimer)
+  RS232Handler:onTimer(idTimer)
+end
+function ON_DRIVER_INIT.IMM1000D()
+  C4:AddVariable("EventCount", 0, "NUMBER")
+  RS232Handler:init({callBack=OnRS232MessageRecieved})
+end
+function ON_DRIVER_LATEINIT.transnetConnection()
+  _refreshDriverConnections()
+end
+
+----------------------- Debug commands ------------------------------
+function LUA_ACTION.triggerEvent()
+-- This is used for debugging purpose. Ignore it in product
+  DEVICE_CFG.eventCnt = DEVICE_CFG.eventCnt + 1
+  local newVal = DEVICE_CFG.eventCnt
+  C4:SetVariable("EventCount", newVal)
+end
+function makeAndSentDebugCommand(dbgCode, mills, strCmd)
+  local secParam = math.floor(tonumber(mills/100))
+  local strInCmd = tohex(strCmd)
+  local checksum = calcCheckSum(strInCmd,1,#strInCmd)
+  local strCmd = strInCmd .. string.char(checksum) .. string.char(3)
+  local strDebugCmd = string.char(0, dbgCode, #strCmd+1, secParam) .. strCmd .. string.char(0xFF, 0xDD)
+  hexdump(strDebugCmd)
+  C4:SendToSerial(1,strDebugCmd)
+end
+function SetAutoReport(mills, strCmd)
+  makeAndSentDebugCommand(0xE1, mills, strCmd)
+end
+function SetResponse(mills, strCmd)
+  makeAndSentDebugCommand(0xE2, mills, strCmd)
+end]]></script>
+        <actions>
+            <action>
+                <name>triggerEvent</name>
+                <command>triggerEvent</command>
+            </action>
+            <action>
+                <name>Show Connected Devices</name>
+                <command>showConnectedDrivers</command>
+            </action>
+            <action>
+                <name>Refresh Connections</name>
+                <command>refreshConnections</command>
+            </action>
+            <action>
+                <name>Display Globals</name>
+                <command>DisplayGlobals</command>
+            </action>
+        </actions>
+        <commands>
+            <command>
+                <name>queryLight</name>
+                <description>Query Light in NAME</description>
+                <params>
+                    <param>
+                        <name>gatewayAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>31</maximum>
+                    </param>
+                    <param>
+                        <name>controllerAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>225</minimum>
+                        <maximum>239</maximum>
+                    </param>
+                    <param>
+                        <name>zoneNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>groupNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>driverId</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>controlLight</name>
+                <description>Control Light in NAME</description>
+                <params>
+                    <param>
+                        <name>gatewayAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>31</maximum>
+                    </param>
+                    <param>
+                        <name>controllerAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>225</minimum>
+                        <maximum>239</maximum>
+                    </param>
+                    <param>
+                        <name>zoneNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>groupNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>power</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Off</item>
+                            <item>On</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>brightness</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>10</maximum>
+                    </param>
+                    <param>
+                        <name>driverId</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>queryCurtain</name>
+                <description>Query Curtain in NAME</description>
+                <params>
+                    <param>
+                        <name>gatewayAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>31</maximum>
+                    </param>
+                    <param>
+                        <name>controllerAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>225</minimum>
+                        <maximum>239</maximum>
+                    </param>
+                    <param>
+                        <name>zoneNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>groupNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>driverId</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>controlCurtain</name>
+                <description>Control Curtain in NAME</description>
+                <params>
+                    <param>
+                        <name>gatewayAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>31</maximum>
+                    </param>
+                    <param>
+                        <name>controllerAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>225</minimum>
+                        <maximum>239</maximum>
+                    </param>
+                    <param>
+                        <name>zoneNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>groupNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>0</minimum>
+                        <maximum>255</maximum>
+                    </param>
+                    <param>
+                        <name>setup</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Close</item>
+                            <item>Open</item>
+                            <item>Stop</item>
+                        </items>
+                    </param>
+                    <param>
+                        <name>driverId</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>queryScenario</name>
+                <description>Query Scenario in NAME</description>
+                <params>
+                    <param>
+                        <name>gatewayAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>31</maximum>
+                    </param>
+                    <param>
+                        <name>controllerAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>225</minimum>
+                        <maximum>239</maximum>
+                    </param>
+                    <param>
+                        <name>zoneNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>20</maximum>
+                    </param>
+                    <param>
+                        <name>driverId</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>controlScenario</name>
+                <description>Control Scenario in NAME</description>
+                <params>
+                    <param>
+                        <name>gatewayAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>31</maximum>
+                    </param>
+                    <param>
+                        <name>controllerAddr</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>225</minimum>
+                        <maximum>239</maximum>
+                    </param>
+                    <param>
+                        <name>zoneNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>20</maximum>
+                    </param>
+                    <param>
+                        <name>modeNumber</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>15</maximum>
+                    </param>
+                    <param>
+                        <name>driverId</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>1</minimum>
+                        <maximum>65535</maximum>
+                    </param>
+                </params>
+            </command>
+        </commands>
+        <properties>
+            <property>
+                <name>Debug Level</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>2 - Warning</default>
+                <items>
+                    <item>0 - Alert</item>
+                    <item>1 - Error</item>
+                    <item>2 - Warning</item>
+                    <item>3 - Info</item>
+                    <item>4 - Trace</item>
+                    <item>5 - Debug</item>
+                </items>
+            </property>
+            <property>
+                <name>Debug Mode</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>Off</default>
+                <items>
+                    <item>Off</item>
+                    <item>Print</item>
+                    <item>Log</item>
+                    <item>Print and Log</item>
+                </items>
+            </property>
+            <property>
+                <name>Dump Data</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>No</default>
+                <items>
+                    <item>No</item>
+                    <item>All</item>
+                    <item>Recieved</item>
+                </items>
+            </property>
+            <property>
+                <name>Prompt Message</name>
+                <type>STRING</type>
+                <readonly>true</readonly>
+                <default />
+            </property>
+        </properties>
+    </config>
+    <composer_categories>
+        <category>Unknown</category>
+    </composer_categories>
+</devicedata>

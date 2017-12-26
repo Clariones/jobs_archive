@@ -1,0 +1,33 @@
+{
+	control4 : {
+		port : 2080
+	},
+	httpServer : {
+		port : 2088,
+		viewHtmlTemplate : "config/viewall.html.ftl"
+	},
+	dataProcessing : [
+		{	
+			profile : "SmartSwitchScene",
+			displayName : "智能开关",
+			deviceId : 0,
+			startHtmlTemplate: "./startHtml.ftl",
+			htmlTemplate : "./SmartSwitchScene/html.ftl",
+			endHtmlTemplate: "./endHtml.ftl"
+		},
+		{	
+			profile : "CO2Sensor",
+			displayName : "二氧化碳",
+			deviceId : 0,
+			htmlTemplate : "./CO2Sensor/html.ftl"
+		},
+		{	
+			profile : "AirCooledChiller",
+			displayName : "冷水机",
+			deviceId : 0,
+			startHtmlTemplate: "./startHtml.ftl",
+			htmlTemplate : "./Chiller/html.ftl",
+			endHtmlTemplate: "./endHtml.ftl"
+		}
+	]
+}

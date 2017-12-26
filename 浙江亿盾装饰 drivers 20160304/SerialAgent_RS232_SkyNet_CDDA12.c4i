@@ -1,0 +1,381 @@
+<devicedata>
+    <notes><![CDATA[{\rtf1\ansi\ansicpg936\deff0\deflang1033\deflangfe2052{\fonttbl{\f0\fmodern\fprq6\fcharset134 \'cb\'ce\'cc\'e5;}{\f1\fnil\fcharset0 Microsoft Sans Serif;}}
+\viewkind4\uc1\pard\lang2052\f0\fs16\'d6\'d0\'ce\'c4\f1\fs17\par
+}
+]]></notes>
+    <copyright>Copyright 2004-2008 Control4 Corporation.  All rights reserved.</copyright>
+    <creator>Clariones</creator>
+    <manufacturer>SkyNet</manufacturer>
+    <name>SkyNet Serial Bus Agent</name>
+    <model>Serial Bus Agent</model>
+    <created>12/30/2015 11:11 AM</created>
+    <modified>12/30/2015 11:11 AM</modified>
+    <version>3</version>
+    <small>devices_sm\c4.gif</small>
+    <large>devices_lg\c4.gif</large>
+    <control>lua_gen</control>
+    <controlmethod>serial</controlmethod>
+    <driver>DriverWorks</driver>
+    <search_type>SkyNet</search_type>
+    <combo>True</combo>
+    <OnlineCategory>others</OnlineCategory>
+    <proxies qty="1">
+        <proxy>SerialAgent_RS232_SkyNet_CDDA12</proxy>
+    </proxies>
+    <connections>
+        <connection>
+            <id>1</id>
+            <facing>6</facing>
+            <connectionname>Serial RS-232</connectionname>
+            <type>1</type>
+            <consumer>True</consumer>
+            <audiosource>False</audiosource>
+            <videosource>False</videosource>
+            <linelevel>False</linelevel>
+            <classes>
+                <class>
+                    <classname>RS_232</classname>
+                </class>
+            </classes>
+        </connection>
+    </connections>
+    <config>
+        <identify_text>Serial Bus Agent</identify_text>
+        <power_management_method>AlwaysOn</power_management_method>
+        <power_command_delay>0</power_command_delay>
+        <power_delay>0</power_delay>
+        <power_command_needed>False</power_command_needed>
+        <serialsettings>9600 8 none 1 none </serialsettings>
+        <documentation>
+			Created by Skynet. Used for delegate all serial communications for one serial bus
+		</documentation>
+        <script><![CDATA[
+-- Comments in Lua script prefaced with two dash characters (see Lua documentation for additional information about appropriate Lua programming syntax)
+-- Global Variables
+local addingVars = {
+  "new_data_id",
+  "frame_str_data"
+}
+
+----------------------------------
+-- internal used variables
+
+-- my device id
+local myDeviceId
+local dumpData = false
+-- timer count, get data then 3, cut down to 0, it's a frame
+local timerCnt = 0
+-- timer for check recv timeout, interval is 10ms
+local recvTimer
+-- HC800 special serial read piece size. Maybe changed in other controller
+local pieceSize = 8
+-- buffer for received bytes
+local recvStrDatas = {}
+-- 
+local recvCmdUpperLmt = 1063
+local recvCmdLowerLmt = 1003
+
+---
+-- timer process
+function OnTimerExpired(idTimer)
+  if idTimer == recvTimer then
+    cutdownTimer()
+  end
+end
+
+---
+-- initialization
+function initSerialRWProxy()
+  myDeviceId = C4:GetDeviceID()
+  C4:UpdateProperty("Device ID", myDeviceId)
+  print("My device ID is "..myDeviceId)
+  recvTimer = C4:AddTimer(10, "MILLISECONDS", true)
+  print("timer created: " .. recvTimer)
+  C4:AddVariable("frame_str_data", "", "STRING")
+  C4:AddVariable("new_data_id", 0, "NUMBER")
+  print("global variables added")
+  for id = recvCmdLowerLmt,recvCmdUpperLmt do
+	C4:AddVariable("new_data_"..id, "", "STRING", false, true)
+  end
+  
+end
+
+function ReceivedFromSerial(idBinding, strData)
+  if strData == nil then
+    return
+  end
+
+  table.insert(recvStrDatas, strData)
+  if (#strData < pieceSize) then
+    timerCnt = 0
+    handleFrameData()
+  else
+    timerCnt = 3
+  end
+end
+
+function cutdownTimer()
+  if (timerCnt == 0) then
+    return
+  end
+  timerCnt = timerCnt - 1
+  if (timerCnt == 0) then
+    handleFrameData()
+  end
+end
+
+
+-- buffer for framed receving-command strings
+local recvFrameDatas = {}
+-- frame seq no
+local recvFrameSeq = recvCmdLowerLmt
+---
+-- when found a whole piece frame data, send out the signal
+function handleFrameData()
+  local str = "";
+  local len = #recvStrDatas
+  if (len < 1) then
+    return ""
+  end
+
+  for k=1,len do
+    str =  str .. recvStrDatas[k]
+  end
+  recvStrDatas = {}
+
+  if (dumpData) then
+	print("Received below data from serial bus:")
+	hexdump(str)
+  end
+  local rstStr = C4:Base64Encode(str)
+  recvFrameSeq = recvFrameSeq + 1
+  if (recvFrameSeq > recvCmdUpperLmt) then
+    recvFrameSeq = recvCmdLowerLmt
+  end
+  table.insert(recvFrameDatas,recvFrameSeq,rstStr)
+  C4:SetDeviceVariable(myDeviceId, recvFrameSeq, rstStr)
+  C4:SetDeviceVariable(myDeviceId, 1002, tostring(recvFrameSeq))
+  if (dumpData) then
+	print("Received data stored to " .. recvFrameSeq)
+  end
+end
+
+--==--==--==--==--==--==-= Wrappers -=-=-=-=-=-=-=-=-=-=-=-=-
+function SendToSerial(message)               -- combines serial output and logging in same function
+  --C4:DebugLog("SendToSerial:" .. message .. "\n");
+
+  C4:SendToSerial(1, message);
+end
+
+
+
+
+function printTable(tbl, prefix)
+  prefix = prefix or ""
+  local keyTbl = {}
+  for k,v in pairs(tbl) do
+    table.insert(keyTbl,k)
+  end
+  table.sort(keyTbl)
+
+  for i,k in pairs(keyTbl) do
+    local v = tbl[k]
+    if (type(v) == "table") then
+      print (prefix .. k .. " = {")
+      printTable(v, prefix .. "    ")
+      print (prefix .."}")
+    elseif (type(v) == "function") then
+      print (prefix .. k .. "() is a function")
+    else
+      print (prefix .. k .. " = " .. v)
+    end
+  end
+end
+
+function ExecuteCommand(strCommand, tParams)
+
+  print ("Recieved commond " .. strCommand)
+  printTable(tParams)
+  if (tParams.ACTION == "SetInitialParameters") then
+    doOnce()
+
+  end
+
+  if (strCommand == "LUA_ACTION") then
+    SendToSerial("I am working with Laowang\r")
+  end
+  
+  if (strCommand == "SendCommand") then
+	SendCommand(tParams)
+  end
+end
+
+function SendCommand(tParams)
+	if (not tParams.strData) then
+		return
+	end
+	
+	local decStrData = C4:Base64Decode(tParams.strData)
+	if (dumpData) then
+		print("Below data will be send to serial bus:")
+		hexdump(decStrData)
+	end
+	print("I will sent it")
+	C4:SendToSerial(1, decStrData)
+end
+
+function Reset()
+  allInputData = ""
+end
+
+local otherDeviceId
+function doOnce()
+  --for k,v in pairs(C4:GetDeviceVariables(C4:GetDeviceID())) do print(k, v.name, v.value) end
+  print ("my device ID = " .. C4:GetDeviceID())
+  if (allInputData == "baby") then
+    allInputData = "baba"
+  else
+    allInputData = "baby"
+  end
+  C4:SetVariable("ALLINPUTDATA", allInputData)
+  print ("set value to "..allInputData)
+
+
+end
+
+function OnPropertyChanged(strProperty)
+  propertyValue = Properties[strProperty]
+  print("strProperty = "  .. strProperty .. " changed to: " .. propertyValue)
+  if (strProperty == "Dump Data") then
+	if ( "Yes" == propertyValue) then
+		dumpData = true
+	else
+		dumpData = false
+	end
+  end
+
+end
+
+
+
+function OnDriverInit()
+	print ("OnDriverInit()")
+	initSerialRWProxy()
+end
+
+function OnDriverUpdate()
+	print ("OnDriverUpdate()")
+end]]></script>
+        <actions>
+            <action>
+                <name>Reset Cumulative Data</name>
+                <command>Reset Input</command>
+            </action>
+            <action>
+                <name>x Another Command</name>
+                <command>Not Used</command>
+            </action>
+            <action>
+                <name>Set Initial Parameters</name>
+                <command>SetInitialParameters</command>
+            </action>
+        </actions>
+        <commands>
+            <command>
+                <name>Reset Input</name>
+                <description>Reset Input string for NAME</description>
+            </command>
+            <command>
+                <name>Simple On</name>
+                <description>Turn on NAME</description>
+            </command>
+            <command>
+                <name>SetInitialParameters</name>
+                <description>Send Advanced Command_1 with PARAM1 to NAME</description>
+                <params>
+                    <param>
+                        <name>New Name</name>
+                        <type>STRING</type>
+                        <readonly>False</readonly>
+                        <default />
+                    </param>
+                    <param>
+                        <name>Wait time</name>
+                        <type>RANGED_INTEGER</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <minimum>5</minimum>
+                        <maximum>50</maximum>
+                    </param>
+                    <param>
+                        <name>Work Mode</name>
+                        <type>LIST</type>
+                        <readonly>False</readonly>
+                        <default />
+                        <items>
+                            <item>Switch</item>
+                            <item>Dimmer</item>
+                            <item>Smart Center</item>
+                        </items>
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>feeback</name>
+                <description>just used for debug</description>
+                <params>
+                    <param>
+                        <name>msg</name>
+                        <type>STRING</type>
+                        <readonly>False</readonly>
+                        <default />
+                    </param>
+                </params>
+            </command>
+            <command>
+                <name>SendCommand</name>
+                <description>Send a command to serial port</description>
+                <params>
+                    <param>
+                        <name>strData</name>
+                        <type>STRING</type>
+                        <readonly>False</readonly>
+                        <default />
+                    </param>
+                </params>
+            </command>
+        </commands>
+        <properties>
+            <property>
+                <name>Device ID</name>
+                <type>RANGED_INTEGER</type>
+                <readonly>true</readonly>
+                <default>0</default>
+                <minimum>0</minimum>
+                <maximum>65535</maximum>
+            </property>
+            <property>
+                <name>Dump Data</name>
+                <type>LIST</type>
+                <readonly>false</readonly>
+                <default>No</default>
+                <items>
+                    <item>Yes</item>
+                    <item>No</item>
+                </items>
+            </property>
+        </properties>
+    </config>
+    <events>
+        <event>
+            <id>1</id>
+            <name>Received Some Data</name>
+            <description>Received Data from NAME... do the following:</description>
+        </event>
+        <event>
+            <id>2</id>
+            <name>event_input</name>
+            <description>another event</description>
+        </event>
+    </events>
+</devicedata>
